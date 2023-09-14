@@ -1,0 +1,29 @@
+{
+  "name": "react-synced-object",
+  "version": "1.0.2",
+  "description": "A lightweight, performant, and powerful package to synchronize state across react components.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\""
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/aaronkwan/react-synced-object.git"
+  },
+  "keywords": [
+    "synced",
+    "data",
+    "local",
+    "storage",
+    "rerender"
+  ],
+  "author": "Aaron Kwan",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/aaronkwan/react-synced-object/issues"
+  },
+  "homepage": "https://github.com/aaronkwan/react-synced-object#readme",
+  "peerDependencies": {
+    "react": "*"
+  }
+}
