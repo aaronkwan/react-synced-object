@@ -53,7 +53,7 @@ export class SyncedObjectManager {
     /**
      * Find the {@link SyncedObject} with the provided key, if it exists.
      * @param {string} key Requested object key.
-     * @returns The requested synced object, or null if nonexistent.
+     * @returns {SyncedObject} The requested synced object, or null if nonexistent.
      * @example
      * const myObject = SyncedObjectManager.getSyncedObject("myObject"); // Returns null if 'myObject' does not exist.
      */
@@ -165,11 +165,11 @@ export class SyncedObjectManager {
         let property, debounceTime;
         if (typeof arg1 === "string") {
             property = arg1;
-            debounceTime = arg2 || 0;
+            debounceTime = arg2 || syncedObject.debounceTime;
         }
         else {
             property = null;
-            debounceTime = arg1 || 0;
+            debounceTime = arg1 || syncedObject.debounceTime;
         }
         this.validateInput("modification", { syncedObject, property, debounceTime });
         // Modify changelogs if needed:

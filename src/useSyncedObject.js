@@ -7,9 +7,8 @@ import { SyncedObjectManager, SyncedObjectError, SyncedObject } from './SyncedOb
  * @property {Object|null} syncedData - The synced object's data.
  * @property {boolean|null} syncedSuccess - The success state of the last sync attempt: either true, false, or null if syncing.
  * @property {Error|null} syncedError - The error object generated from the last sync attempt, if any.
- * @property {function(string|number, number|undefined): void} modify - A function for modifying the synced object, similar to calling its modify() method.
+ * @property {function(string|number, number|undefined): void} modify - A function for modifying the synced object, with the same arguments as {@link SyncedObject.modify}.
  */
-
 
 /**
  * A custom hook for interacting with an existing synced object through a component.
@@ -23,7 +22,7 @@ import { SyncedObjectManager, SyncedObjectError, SyncedObject } from './SyncedOb
  * - `syncedData`: The synced object's data.
  * - `syncedSuccess`: The success state of the last sync attempt: either true, false, or null if syncing.
  * - `syncedError`: The error object generated from the last sync attempt, if any.
- * - `modify`: A function for modifying the synced object, similar to calling its modify() method.
+ * - `modify`: A function for modifying the synced object, with the same arguments as {@link SyncedObject.modify}.
  * @example
  * const { syncedObject, syncedData, syncedSuccess, syncedError, modify } = useSyncedObject("myObject");
  * 
