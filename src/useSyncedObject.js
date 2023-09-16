@@ -1,19 +1,32 @@
 import { useState, useEffect, useMemo } from 'react';
-import { SyncedObjectManager, SyncedObjectError } from './SyncedObjectManager';
+import { SyncedObjectManager, SyncedObjectError, SyncedObject } from './SyncedObjectManager';
 
 /**
- * A custom component hook for interacting with an existing synced object.
+ * @typedef {Object} returnBundle
+ * @property {SyncedObject|null} syncedObject - The {@link SyncedObject} if it exists.
+ * @property {Object|null} syncedData - The synced object's data.
+ * @property {boolean|null} syncedSuccess - The success state of the last sync attempt: either true, false, or null if syncing.
+ * @property {Error|null} syncedError - The error object generated from the last sync attempt, if any.
+ * @property {function(string|number, number|undefined): void} modify - A function for modifying the synced object, similar to calling its modify() method.
+ */
+
+
+/**
+ * A custom hook for interacting with an existing synced object through a component.
  * @param {string} key The requested synced object key.
  * @param {Object} [options] - The options for configuring dependencies and properties.
  * @param {string|string[]} [options.dependencies=["modify", "pull", "push", "error"]] - An array of dependency names (possible: ["modify", "modify_external", "pull", "push", "error"]).
  * @param {string|string[]} [options.properties=[]] - An array of property names (default: []).
  * @param {boolean} [options.safeMode=true] - Whether to enable safe mode (default: true).
- * @returns {Object} Several methods and properties for interacting with the synced object.
- * - `syncedObject`: The synced object if it exists. (default: null)
- * - `syncedData`: The synced object's data. (default: null)
- * - `syncedSuccess`: The success state of the last sync attempt, either true, false, or null if syncing. (default: null)
- * - `syncedError`: The error object generated from the last sync attempt, if any. (default: null)
- * - `modify`: A function for modifying the synced object, similar to calling syncedObject.modify.
+ * @returns {returnBundle} Several methods and properties for interacting with the synced object.
+ * - `syncedObject`: The {@link SyncedObject} if it exists.
+ * - `syncedData`: The synced object's data.
+ * - `syncedSuccess`: The success state of the last sync attempt: either true, false, or null if syncing.
+ * - `syncedError`: The error object generated from the last sync attempt, if any.
+ * - `modify`: A function for modifying the synced object, similar to calling its modify() method.
+ * @example
+ * const { syncedObject, syncedData, syncedSuccess, syncedError, modify } = useSyncedObject("myObject");
+ * 
  */
 const useSyncedObject = (key, options) => {
     // Checks:
@@ -171,7 +184,7 @@ const useSyncedObject = (key, options) => {
     const [syncedData, setSyncedData] = useState(null);
     const [syncedSuccess, setSyncedSuccess] = useState(null);
     const [syncedError, setSyncedError] = useState(null);
-     const modify = (property, debounceTime) => {
+    const modify = (property, debounceTime) => {
         setSyncedSuccess(null);
         syncedObject.callerId = componentId;
         return syncedObject.modify(property, debounceTime);

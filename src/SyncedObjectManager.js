@@ -7,7 +7,7 @@ export class SyncedObjectManager {
 
     // Main Interface:
     /**
-    * Initialize a new synced object using provided options.
+    * Initialize a new {@link SyncedObject} using provided options.
     * @param {string} key The synced object's identifier.
     * @param {"temp"|"local"|"custom"} type The type of synced object, affecting sync behavior.
     * @param {Object} [options] - The options for initializing the synced object.
@@ -16,35 +16,18 @@ export class SyncedObjectManager {
     * @param {"prevent"|"allow"|"finish"} [options.reloadBehavior="prevent"] - The reload behavior.
     * @param {Object} [options.customSyncFunctions] - Custom synchronization functions.
     * @param {Object} [options.callbackFunctions] - Callback functions for synchronization events.
-    * @param {boolean} [options.safeMode=true] - Whether to enable safe mode.
-    * @returns {Object} The newly created synced object.
+    * @param {boolean} [options.safeMode=true] - Whether safe mode is enabled.
+    * @returns {SyncedObject} The newly created synced object.
+    * @example
+    * const myObject = SyncedObjectManager.initializeSyncedObject("myObject", "local"};
     */
     static initializeSyncedObject(key, type, options) {
         // Check for duplicates:
         if (this.syncedObjects.has(key)) {
             return this.syncedObjects.get(key);
         }
-        // Validate input:
-        if (!key || !type) {
-            throw new SyncedObjectError(`Failed to initialize synced object: Missing parameters.`, key, "initializeSyncedObject");
-        }
-        const { defaultValue = {}, debounceTime = 0, reloadBehavior = "prevent", customSyncFunctions, callbackFunctions, safeMode = true } = options || {};
-        try {
-            if (safeMode) {
-                this.validateInput("key", key);
-                this.validateInput("type", type);
-                this.validateInput("options", options);
-                this.validateInput("debounceTime", debounceTime);
-                this.validateInput("reloadBehavior", reloadBehavior);
-                this.validateInput("customSyncFunctions", customSyncFunctions);
-                this.validateInput("callbackFunctions", callbackFunctions);
-            }
-        }
-        catch (error) {
-            throw new SyncedObjectError(`Failed to initialize synced object: ${error}`, key, "initializeSyncedObject");
-        }
         // Create synced object:
-        const syncedObject = {
+        const syncedObjectData = {
             key: key,
             type: type,
             data: defaultValue,
@@ -53,50 +36,13 @@ export class SyncedObjectManager {
             reloadBehavior: reloadBehavior,
             safeMode: safeMode,
             callerId: null,
-        }
-        // Add functions:
-        if (safeMode) {
-            // Run checks:
-            if (type === "custom") {
-                if (customSyncFunctions) {
-                    const { pull, push } = customSyncFunctions;
-                    syncedObject.pull = pull;
-                    syncedObject.push = push;
-                }
-                else {
-                    console.warn(`Synced object initialization with key '${key}': customSyncFunctions not provided for 'custom' object. Use 'temp' or 'local' type instead.`);
-                }
-            }
-            if (type !== "custom" && customSyncFunctions) {
-                console.warn(`Synced object initialization with key '${key}': customSyncFunctions will not be run for 'temp' or 'local' objects. Use 'custom' type instead.`);
-            }
-            if (type === "custom" && reloadBehavior === "finish") {
-                console.warn(`Synced object initialization with key '${key}': reloadBehavior 'finish' might not behave as expected for asynchronous functions.`);
-            }
-        }
-        else {
-            // Skip checks:
-            if (customSyncFunctions) {
-                const { pull, push } = customSyncFunctions;
-                syncedObject.pull = pull;
-                syncedObject.push = push;
-            }
-        }
-        if (callbackFunctions) {
-            const { onSuccess, onError } = callbackFunctions;
-            syncedObject.onSuccess = onSuccess;
-            syncedObject.onError = onError;
-        }
-        syncedObject.modify = function (arg1, arg2) {
-            // Parse parameters to find property and debounceTime:
-            if (typeof arg1 === "string") {
-                SyncedObjectManager.handleModificationsOfProperty(this, arg1, arg2);
-            }
-            else {
-                SyncedObjectManager.handleModifications(this, arg1);
-            }
-            return this.data;
+            pull: customSyncFunctions?.pull,
+            push: customSyncFunctions?.push,
+            onSuccess: callbackFunctions?.onSuccess,
+            onError: callbackFunctions?.onError
         };
+        this.validateInput("initialization", syncedObjectData);
+        const syncedObject = new SyncedObject(syncedObjectData);
         // Add to storage:
         this.syncedObjects.set(key, syncedObject);
         // Initial sync:
@@ -105,9 +51,11 @@ export class SyncedObjectManager {
         return syncedObject;
     }
     /**
-     * 
+     * Find the {@link SyncedObject} with the provided key, if it exists.
      * @param {string} key Requested object key.
      * @returns The requested synced object, or null if nonexistent.
+     * @example
+     * const myObject = SyncedObjectManager.getSyncedObject("myObject"); // Returns null if 'myObject' does not exist.
      */
     static getSyncedObject(key) {
         return this.syncedObjects.get(key);
@@ -211,40 +159,22 @@ export class SyncedObjectManager {
         }
     }
 
-    // Backend Methods:
-    static async handleModificationsOfProperty(syncedObject, property, debounceTime) {
-        // Modify the synced object's changelog before continuing.
-        // Validate input:
-        try {
-            if (syncedObject.safeMode) {
-                this.validateInput("modify-property", property);
-                if (!syncedObject.data.hasOwnProperty(property)) {
-                    console.warn(`Synced Object Modification: property '${property}' not found in synced object with key '${syncedObject.key}'.`);
-                }
-            }
-        }
-        catch (error) {
-            throw new SyncedObjectError(`Failed to modify due to invalid params: ${error}`, syncedObject.key, "handleModificationsOfProperty");
-        } 
-        // Add property to changelog:
-        if (!syncedObject.changelog.includes(property)) {
-            syncedObject.changelog.push(property);
-        }
-        // Handle modifications:
-        this.handleModifications(syncedObject, debounceTime);
-    }
-    static async handleModifications(syncedObject, debounceTime) {
+    // Backend Utils:
+    static async handleModifications(syncedObject, arg1, arg2) {
         // Handle modifications on the synced object.
-        // Validate Input:
-        if (!debounceTime) {
-            debounceTime = syncedObject.debounceTime;
+        let property, debounceTime;
+        if (typeof arg1 === "string") {
+            property = arg1;
+            debounceTime = arg2 || 0;
         }
-        try {
-            if (syncedObject.safeMode)
-            this.validateInput("modify-debounceTime", debounceTime);
+        else {
+            property = null;
+            debounceTime = arg1 || 0;
         }
-        catch (error) {
-            throw new SyncedObjectError(`Failed to modify due to invalid params: ${error}`, syncedObject.key, "handleModifications");
+        this.validateInput("modification", { syncedObject, property, debounceTime });
+        // Modify changelogs if needed:
+        if (property && !syncedObject.changelog.includes(property)) {
+            syncedObject.changelog.push(property);
         }
         // Rerender dependent components:
         setTimeout(() => {
@@ -302,8 +232,6 @@ export class SyncedObjectManager {
         // Handle callbacks with success:
         this.handleCallBacks(syncedObject, { requestType: requestType, success: true, error: null });
     }
-
-    // Backend Utils:
     static async pullFromLocal(syncedObject) {
         // Pull data from local storage.
         const json = this.localStorage.getItem(syncedObject.key);
@@ -353,75 +281,83 @@ export class SyncedObjectManager {
     }
     
     // Backend Sub-Utils and Setup:
-    static validateInput(type, value) {
-        // Validate input for several functions.
-        if (type === "key") {
-            if (typeof value === "string" && value.length > 0) {
-                return true;
+    static validateInput(name, data) {
+        // Validate input for interface methods.
+        if (name === "initialization") {
+            if (data.safeMode === false) {
+                return;
             }
-            throw "parameter 'key' must be a non-empty string."
-        }
-        if (type === "type") {
-            if (value === "temp" || value === "local" || value === "custom") {
-                return true;
-            }
-            throw "parameter 'type' must be either 'temp', 'local', or 'custom'."
-        }
-        if (type === "options") {
-            if (typeof value === "object") {
-                const validProperties = ["defaultValue", "debounceTime", "reloadBehavior", "customSyncFunctions", "callbackFunctions", "safeMode"];
-                const properties = Object.keys(value);
-                if (properties.every(prop => validProperties.includes(prop))) {
-                    return true;
+            const { key, type, debounceTime, reloadBehavior, pull, push, onSuccess, onError } = data;
+            // Warnings:
+            if (type === "custom") {
+                if (!pull && !push) {
+                    console.warn(`Synced object initialization with key '${key}': customSyncFunctions not provided for 'custom' object. Use 'temp' or 'local' type instead.`);
+                }
+                if (reloadBehavior === "finish") {
+                    console.warn(`Synced object initialization with key '${key}': reloadBehavior 'finish' might not behave as expected for asynchronous functions.`);
                 }
             }
-            throw "parameter 'options' must be an object without extra unsupported properties."
+            else if (pull || push) {
+                console.warn(`Synced object initialization with key '${key}': customSyncFunctions will not be run for 'temp' or 'local' objects. Use 'custom' type instead.`);
+            }
+            // Errors:
+            const errors = [];
+            if (!key || !type) {
+                errors.push("missing parameters 'key' or 'type'");
+            }
+            if (!typeof key === "string" || !value.length > 0) {
+                errors.push("parameter 'key' must be a non-empty string");
+            }
+            if (type !== "temp" || type !== "local" || type !== "custom") {
+                errors.push("parameter 'type' must be either 'temp', 'local', or 'custom'");
+            }
+            if (debounceTime && (!typeof debounceTime === "number" || !debounceTime >= 0)) {
+                errors.push("parameter 'debounceTime' must be a non-negative number");
+            }
+            if (reloadBehavior && (reloadBehavior !== "prevent" || reloadBehavior !== "allow" || reloadBehavior !== "finish")) {
+                errors.push("parameter 'reloadBehavior' must be either 'prevent', 'allow', or 'finish'");
+            }
+            if (pull && (!typeof pull === "function")) {
+                errors.push("parameter 'customSyncFunctions.pull' must be a function");
+            }
+            if (push && (!typeof push === "function")) {
+                errors.push("parameter 'customSyncFunctions.push' must be a function");
+            }
+            if (onSuccess && (!typeof onSuccess === "function")) {
+                errors.push("parameter 'callbackFunctions.onSuccess' must be a function");
+            }
+            if (onError && (!typeof onError === "function")) {
+                errors.push("parameter 'callbackFunctions.onError' must be a function");
+            }
+            if (errors.length > 0) {
+                throw new SyncedObjectError(`Failed to initialize synced object: ${errors.join('; ')}`, key, "initializeSyncedObject");
+            }
         }
-        if (type === "debounceTime") {
-            if (typeof value === "number" && value >= 0) {
-                return true;
+        if (name === "modification") {
+            if (data.syncedObject.safeMode === false) {
+                return;
             }
-            throw "parameter 'debounceTime' must be a non-negative number."
-        }
-        if (type === "reloadBehavior") {
-            if (value === "prevent" || value === "allow" || value === "finish") {
-                return true;
+            // Errors & Warnings:
+            const { property, debounceTime } = data;
+            const syncedObject = data.syncedObject;
+            const key = syncedObject.key;
+            const errors = [];
+            if (property) {
+                if (!(typeof property === "string" || property.length > 0)) {
+                    errors.push("parameter 'property' must be a non-empty string");
+                }
+                else {
+                    if (!syncedObject.data.hasOwnProperty(property)) {
+                        errors.push(`parameter 'property' must be a property of synced object with key '${key}'`);
+                    }
+                }
             }
-            throw "parameter 'reloadBehavior' must be either 'prevent', 'allow', or 'finish'."
-        }
-        if (type === "customSyncFunctions") {
-            if (!value) {
-                return true;
+            if (debounceTime && (!typeof debounceTime === "number" || !debounceTime >= 0)) {
+                errors.push("parameter 'debounceTime' must be a non-negative number");
             }
-            if (typeof value === "object" && 
-            (!value.pull || typeof value.pull === "function") && 
-            (!value.push || typeof value.push === "function")) {
-                return true;
+            if (errors.length > 0) {
+                throw new SyncedObjectError(`Failed to modify due to invalid params: ${errors.join('; ')}`, key, "modify");
             }
-            throw "parameter 'customSyncFunctions' must be an object only containing functions 'pull' and 'push'."
-        }
-        if (type === "callbackFunctions") {
-            if (!value) {
-                return true;
-            }
-            if (typeof value === "object" && 
-            (!value.onSuccess || typeof value.onSuccess === "function") && 
-            (!value.onError || typeof value.onError === "function")) {
-                return true;
-            }
-            throw "parameter 'callbackFunctions' must be an object only containing functions 'onSuccess' and 'onError'."
-        }
-        if (type === "modify-property") {
-            if (typeof value === "string" && value.length > 0) {
-                return true;
-            }
-            throw "parameter 'property' must be a non-empty string."
-        }
-        if (type === "modify-debounceTime") {
-            if (typeof value === "number" && value >= 0) {
-                return true;
-            }
-            throw "parameter 'debounceTime' must be a non-negative number."
         }
     }
     static emitEvent(syncedObject, status) {
@@ -474,5 +410,134 @@ export class SyncedObjectError extends Error {
 }
 
 
+/**
+ *  * @typedef {Object} User
+ * @property {string} key The key associated with the synced object.
+ */
+/**
+ * Represents a Synced Object.
+ * @classdesc A Synced Object is used to manage synchronized state and behavior.
+ * - Note: Do not construct this class directly - use factory function initializeSyncedObject() instead.
+ */
+export class SyncedObject {
+    constructor(initObject) {
+        const { key, type, data, changelog, debounceTime, reloadBehavior, safeMode, callerId, pull, push, onSuccess, onError } = initObject;
+        if (Object.keys(initObject).length < 12) {
+            throw new SyncedObjectError(`Missing parameters in SyncedObject constructor. Use factory function initializedSyncedObject() instead.`, key, "initializeSyncedObject");
+        }
+        this.key = key;
+        this.type = type;
+        this.data = data;
+        this.changelog = changelog;
+        this.debounceTime = debounceTime;
+        this.reloadBehavior = reloadBehavior;
+        this.safeMode = safeMode;
+        this.callerId = callerId;
+        if (pull) this.pull = pull;
+        if (push) this.push = push;
+        if (onSuccess) this.onSuccess = onSuccess;
+        if (onError) this.onError = onError;
+    }
 
-    
+    /** 
+    * The key associated with the synced object.
+    * @type {string}
+    */
+    key;
+
+    /**
+     * The type of the synced object.
+     * @type {"temp"|"local"|"custom"}
+    */
+    type;
+
+    /**
+     * The data of the synced object.
+     * @type {*}
+    */
+    data;
+
+    /**
+     * The changelog of properties pending sync.
+     * @type {string[]}
+    */
+    changelog;
+
+    /**
+     * The default sync debounce time.
+     * @type {*}
+    */
+    debounceTime;
+
+    /**
+     * The behavior on reload of the synced object.
+     * @type {"prevent"|"allow"|"finish"}
+    */
+    reloadBehavior;
+
+    /**
+     * Whether safe mode checks and warnings are enabled.
+     * @type {boolean}
+    */
+    safeMode;
+
+    /**
+     * The ID of the last component to modify this object.
+     * @type {number}
+     * @default null
+    */
+    callerId;
+
+    /**
+     * The callback function called when an object of type `custom` tries to pull data.
+     * @param {SyncedObject} syncedObject The synced object itself.
+     * @returns {*} The data to be pulled, or null if a push is required.
+     * @throws {Error} If there is an error pulling data.
+     * @type {Function}
+     * @default null
+    */
+    pull;
+
+    /**
+     * The callback function called when an object of type `custom` tries to push data.
+     * @param {SyncedObject} syncedObject The synced object itself.
+     * @returns {*} Any
+     * @throws {Error} If there is an error pushing data.
+     * @type {Function} 
+     * @default null
+    */
+    push;
+
+    /**
+     * The callback function called after a successful sync.
+     * @param {SyncedObject} syncedObject The synced object itself.
+     * @param {Object} status The status of the sync: { requestType, success, error }.
+     * @type {Function}
+     * @default null
+    */
+    onSuccess;
+
+    /**
+     * The callback function called after an unsuccessful sync.
+     * @param {SyncedObject} syncedObject The synced object itself.
+     * @param {Object} status The status of the sync: { requestType, success, error }.
+     * @type {Function}
+     * @default null
+    */
+    onError;
+
+    /**
+     * A member function to handle modifications to the synced object.
+     * @param {string|number} arg1 The property to modify, or the debounce time. 
+     * @param {number|undefined} arg2 The debounce time, if property is provided.
+     * @returns {Object} The synced object's data field.
+     * @example 
+     * myObject.modify(); // Modifies 'myObject', handling rerenders, syncing, and callbacks.
+     * myObject.modify(1000).prop1 = "new value"; // Sets myObject.data.prop1 to "new value", modifying 'myObject' with a sync debounce time of 1000ms.
+     * myObject.modify("prop1", 1000); // Modifies 'myObject.prop1', with a sync debounce time of 1000ms.
+     */
+    modify(arg1, arg2) {
+        SyncedObjectManager.handleModifications(this, arg1, arg2);
+        return this.data;
+    }
+}
