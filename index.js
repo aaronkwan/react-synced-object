@@ -2,4 +2,9 @@
 import { SyncedObjectManager } from './src/SyncedObjectManager';
 import useSyncedObject from './src/useSyncedObject';
 
-export { SyncedObjectManager, useSyncedObject };
+const initializeSyncedObject = SyncedObjectManager.initializeSyncedObject;
+const getSyncedObject = SyncedObjectManager.getSyncedObject;
+const findInLocalStorage = SyncedObjectManager.findInLocalStorage;
+const removeFromLocalStorage = SyncedObjectManager.removeFromLocalStorage;
+
+export { useSyncedObject, initializeSyncedObject, getSyncedObject, findInLocalStorage, removeFromLocalStorage };

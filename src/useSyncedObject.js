@@ -1,6 +1,20 @@
 import { useState, useEffect, useMemo } from 'react';
 import { SyncedObjectManager, SyncedObjectError } from './SyncedObjectManager';
 
+/**
+ * A custom component hook for interacting with an existing synced object.
+ * @param {string} key The requested synced object key.
+ * @param {Object} [options] - The options for configuring dependencies and properties.
+ * @param {string|string[]} [options.dependencies=["modify", "pull", "push", "error"]] - An array of dependency names (possible: ["modify", "modify_external", "pull", "push", "error"]).
+ * @param {string|string[]} [options.properties=[]] - An array of property names (default: []).
+ * @param {boolean} [options.safeMode=true] - Whether to enable safe mode (default: true).
+ * @returns {Object} Several methods and properties for interacting with the synced object.
+ * - `syncedObject`: The synced object if it exists. (default: null)
+ * - `syncedData`: The synced object's data. (default: null)
+ * - `syncedSuccess`: The success state of the last sync attempt, either true, false, or null if syncing. (default: null)
+ * - `syncedError`: The error object generated from the last sync attempt, if any. (default: null)
+ * - `modify`: A function for modifying the synced object, similar to calling syncedObject.modify.
+ */
 const useSyncedObject = (key, options) => {
     // Checks:
     if (typeof useState !== 'function' || typeof useEffect !== 'function' || typeof useMemo !== 'function') {

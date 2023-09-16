@@ -6,8 +6,20 @@ export class SyncedObjectManager {
     static componentCounter = 0;
 
     // Main Interface:
+    /**
+    * Initialize a new synced object using provided options.
+    * @param {string} key The synced object's identifier.
+    * @param {"temp"|"local"|"custom"} type The type of synced object, affecting sync behavior.
+    * @param {Object} [options] - The options for initializing the synced object.
+    * @param {Object} [options.defaultValue={}] - The default value for the synced object.
+    * @param {number} [options.debounceTime=0] - The debounce time for modifications.
+    * @param {"prevent"|"allow"|"finish"} [options.reloadBehavior="prevent"] - The reload behavior.
+    * @param {Object} [options.customSyncFunctions] - Custom synchronization functions.
+    * @param {Object} [options.callbackFunctions] - Callback functions for synchronization events.
+    * @param {boolean} [options.safeMode=true] - Whether to enable safe mode.
+    * @returns {Object} The newly created synced object.
+    */
     static initializeSyncedObject(key, type, options) {
-        // Initialize a new synced object using provided options.
         // Check for duplicates:
         if (this.syncedObjects.has(key)) {
             return this.syncedObjects.get(key);
@@ -92,59 +104,111 @@ export class SyncedObjectManager {
         // Return:
         return syncedObject;
     }
+    /**
+     * 
+     * @param {string} key Requested object key.
+     * @returns The requested synced object, or null if nonexistent.
+     */
     static getSyncedObject(key) {
-        // Obtain the synced object if it exists.
         return this.syncedObjects.get(key);
     }
 
-    // Utility Interface:
+    // Hook Interface:
+    /**
+     * Generate a simple component ID using a counter.
+     * @returns {number} A unique component ID.
+     */
     static generateComponentId() {
-        // Generate a unique component id.
         this.componentCounter++;
         return this.componentCounter;
     }
 
     // Local Storage Interface:
-    static findMatchingInLocalStorage(keyIncludes, options) {
-        // Find all objects in local storage which include the key.
-        const { readOnly = true, deleteMask, initOptions } = options;
+
+    /**
+    * Find the key or matching keys in local storage.
+    * @param {string|RegExp} keyPattern The pattern to match against keys in local storage.
+    * @param {"data"|"key"} [returnType="data"] Whether to return the data (default) or key matched.
+    * @returns {Array<string>|Array<Object>} An array of matching keys or data objects.
+    * @example
+    * const keys = findInLocalStorage(/myObject/, "key");
+    * console.log(keys); // ['myObject1', 'myObject2']
+    */
+    static findInLocalStorage(keyPattern, returnType = "data") {
         // Validate input:
-        try {
-            this.validateInput("key", keyIncludes);
-            this.validateInput("findMatchingOptions", options);
+        if (returnType !== "data" || returnType !== "key") {
+            throw new SyncedObjectError(`Failed to find in local storage: returnType must be "data" or "key", found: '${returnType}'.`, keyPattern, "findInLocalStorage");
         }
-        catch (error) {
-            throw new SyncedObjectError(`Failed to find matching: ${error}`, keyIncludes, "findMatchingInLocalStorage");
-        }
+        // Find keys:
         const keys = Object.keys(this.localStorage);
-        const matchingKeys = keys.filter((key) => key.includes(keyIncludes));
-        // Create objects with data and return via array:
-        if (readOnly === true) {
-            return matchingKeys.map((key) => {
-                const object = JSON.parse(this.localStorage.getItem(key));
-                for (const property in deleteMask) {
-                    delete object[property];
-                }
-                return object;
-            });
+        let matchingKeys = [];
+        if (typeof keyPattern === "string" && keyPattern.length > 0) {
+            if (keys.includes(keyPattern)) {
+                matchingKeys = [keyPattern];
+            }
         }
-        // Initialize syncedObjects using initOptions, return keys:
-        if (readOnly === false) {
-            matchingKeys.map((key) => this.initializeSyncedObject(key, initOptions));
+        else if (keyPattern instanceof RegExp) {
+            matchingKeys = keys.filter((key) => keyPattern.test(key));
+        }
+        else {
+            throw new SyncedObjectError(`Failed to find in local storage: keyPattern must be a non-empty string or a RegExp, found: '${keyPattern}'.`, keyPattern, "findInLocalStorage");
+        }
+        // Return data or keys:
+        if (returnType === "key") {
             return matchingKeys;
         }
+        return matchingKeys.map((key) => {
+            const object = JSON.parse(this.localStorage.getItem(key));
+            return object;
+        });
     }
-    static removeMatchingInLocalStorage() {
-        // Remove all objects in local storage which include the key.
-        const keys = Object.keys(this.localStorage);
-        const matchingKeys = keys.filter((key) => key.includes(keyIncludes));
+    /**
+    * Delete some keys from local storage.
+    * @param {string|RegExp} keyPattern The pattern to match against keys in local storage.
+    * @param {"ignore"|"decouple"|"delete"} [affectedObjects="ignore"] Whether to decouple, delete, or ignore any affected synced objects.
+    * - `ignore`: Affected synced objects may re-push their data to local storage again.
+    * - `decouple`: Affected synced objects will be decoupled form local storage, turning into 'temp' objects.
+    * - `delete`: Affected synced objects will be deleted from the map, and their data will be set to null.
+    * @returns {Array<string>} An array of deleted keys.
+    * @example 
+    * const deletedKeys = removeFromLocalStorage("myObject1", "decouple");
+    * console.log(deletedKeys); // ['myObject1']
+    * console.log(getSyncedObject('myObject1')).type; // 'temp'
+    */
+    static removeFromLocalStorage(keyPattern, affectedObjects = "ignore") {
+        // Validate input:
+        if (affectedObjects !== "decouple" || affectedObjects !== "delete" || affectedObjects !== "ignore") {
+            throw new SyncedObjectError(`Failed to remove from local storage: affectedObjects must be "decouple", "delete", "ignore, found: '${returnType}'.`, keyPattern, "removeFromLocalStorage");
+        }
+        // Find keys:
+        const matchingKeys = this.findInLocalStorage(keyPattern, "key");
         matchingKeys.map((key) => this.localStorage.removeItem(key));
-    }
-    static resetLocalStorage() {
-        // Reset all local storage, deleting the affected synced objects.
-        this.localStorage.clear();
-        this.syncedObjects = new Map();
-        location.reload(true);
+        // Handle affected objects:
+        if (affectedObjects === "ignore") {
+            return matchingKeys;
+        }
+        if (affectedObjects === "delete") {
+            matchingKeys.map((key) => { 
+                const object = this.syncedObjects.get(key);
+                if (object) {
+                    object.modify = function () {
+                        console.warn(`Synced Object Modification: object with key '${this.key}' has been deleted.`);
+                    }
+                    object.data = null;
+                    this.syncedObjects.delete(key);
+                }
+            });
+            return matchingKeys;
+        }
+        if (affectedObjects === "decouple") {
+            matchingKeys.map((key) => { 
+                const object = this.syncedObjects.get(key);
+                if (object) {
+                    object.type = "temp";
+                }
+            });
+            return matchingKeys;
+        }
     }
 
     // Backend Methods:
@@ -318,13 +382,6 @@ export class SyncedObjectManager {
                 return true;
             }
             throw "parameter 'debounceTime' must be a non-negative number."
-        }
-        if (type === "findMatchingOptions") {
-            const { readOnly = true, deleteMask, initOptions } = value;
-            if (typeof readOnly === "boolean" && typeof deleteMask === "object" && typeof initOptions === "object") {
-                return true;
-            }
-            throw "invalid options for findMatchingInLocalStorage()."
         }
         if (type === "reloadBehavior") {
             if (value === "prevent" || value === "allow" || value === "finish") {
