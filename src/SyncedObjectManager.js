@@ -27,6 +27,7 @@ export class SyncedObjectManager {
             return this.syncedObjects.get(key);
         }
         // Create synced object:
+        const { defaultValue = {}, debounceTime = 0, reloadBehavior = "prevent", customSyncFunctions, callbackFunctions, safeMode = true } = options || {};
         const syncedObjectData = {
             key: key,
             type: type,
