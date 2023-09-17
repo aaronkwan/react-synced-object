@@ -23,8 +23,8 @@ export class SyncedObjectManager {
     */
     static initializeSyncedObject(key, type, options) {
         // Check for duplicates:
-        if (this.syncedObjects.has(key)) {
-            return this.syncedObjects.get(key);
+        if (SyncedObjectManager.syncedObjects.has(key)) {
+            return SyncedObjectManager.syncedObjects.get(key);
         }
         // Create synced object:
         const { defaultValue = {}, debounceTime = 0, reloadBehavior = "prevent", customSyncFunctions, callbackFunctions, safeMode = true } = options || {};
@@ -42,34 +42,39 @@ export class SyncedObjectManager {
             onSuccess: callbackFunctions?.onSuccess,
             onError: callbackFunctions?.onError
         };
-        this.validateInput("initialization", syncedObjectData);
+        SyncedObjectManager.validateInput("initialization", syncedObjectData);
         const syncedObject = new SyncedObject(syncedObjectData);
         // Add to storage:
-        this.syncedObjects.set(key, syncedObject);
+        SyncedObjectManager.syncedObjects.set(key, syncedObject);
         // Initial sync:
-        this.forceSyncTask(syncedObject, "pull");
+        SyncedObjectManager.forceSyncTask(syncedObject, "pull");
         // Return:
         return syncedObject;
     }
     /**
      * Find the {@link SyncedObject} with the provided key, if it exists.
      * @param {string} key Requested object key.
-     * @returns {SyncedObject} The requested synced object, or null if nonexistent.
+     * @returns {SyncedObject|undefined} The requested synced object, or undefined if nonexistent.
      * @example
-     * const myObject = SyncedObjectManager.getSyncedObject("myObject"); // Returns null if 'myObject' does not exist.
+     * const myObject = SyncedObjectManager.getSyncedObject("myObject"); // Returns undefined if 'myObject' does not exist.
      */
     static getSyncedObject(key) {
-        return this.syncedObjects.get(key);
+        return SyncedObjectManager.syncedObjects.get(key);
     }
-
-    // Hook Interface:
     /**
-     * Generate a simple component ID using a counter.
-     * @returns {number} A unique component ID.
+     * Delete the {@link SyncedObject} with the provided key from the object manager, if it exists.
+     * @param {string} key Requested object key.
+     * @example
+     * SyncedObjectManager.deleteSyncedObject("myObject"); // myObject.modify() will now do nothing.
      */
-    static generateComponentId() {
-        this.componentCounter++;
-        return this.componentCounter;
+    static deleteSyncedObject(key) {
+        const object = SyncedObjectManager.syncedObjects.get(key);
+        if (object) {
+            object.modify = function () {
+                console.warn(`Synced Object Modification: object with key '${this.key}' has been deleted.`);
+            }
+            SyncedObjectManager.syncedObjects.delete(key);
+        }
     }
 
     // Local Storage Interface:
@@ -85,11 +90,11 @@ export class SyncedObjectManager {
     */
     static findInLocalStorage(keyPattern, returnType = "data") {
         // Validate input:
-        if (returnType !== "data" || returnType !== "key") {
-            throw new SyncedObjectError(`Failed to find in local storage: returnType must be "data" or "key", found: '${returnType}'.`, keyPattern, "findInLocalStorage");
+        if (returnType !== "data" && returnType !== "key") {
+            throw new SyncedObjectError(`Failed to find in local storage: returnType must be 'data' or 'key', found: '${returnType}'.`, keyPattern, "findInLocalStorage");
         }
         // Find keys:
-        const keys = Object.keys(this.localStorage);
+        const keys = Object.keys(SyncedObjectManager.localStorage);
         let matchingKeys = [];
         if (typeof keyPattern === "string" && keyPattern.length > 0) {
             if (keys.includes(keyPattern)) {
@@ -107,7 +112,7 @@ export class SyncedObjectManager {
             return matchingKeys;
         }
         return matchingKeys.map((key) => {
-            const object = JSON.parse(this.localStorage.getItem(key));
+            const object = JSON.parse(SyncedObjectManager.localStorage.getItem(key));
             return object;
         });
     }
@@ -116,8 +121,8 @@ export class SyncedObjectManager {
     * @param {string|RegExp} keyPattern The pattern to match against keys in local storage.
     * @param {"ignore"|"decouple"|"delete"} [affectedObjects="ignore"] Whether to decouple, delete, or ignore any affected synced objects.
     * - `ignore`: Affected synced objects may re-push their data to local storage again.
-    * - `decouple`: Affected synced objects will be decoupled form local storage, turning into 'temp' objects.
-    * - `delete`: Affected synced objects will be deleted from the map, and their data will be set to null.
+    * - `decouple`: Affected synced objects will be decoupled from local storage, turning into 'temp' objects.
+    * - `delete`: Affected synced objects will be {@link deleteSyncedObject deleted} from the manager.
     * @returns {Array<string>} An array of deleted keys.
     * @example 
     * const deletedKeys = removeFromLocalStorage("myObject1", "decouple");
@@ -126,35 +131,28 @@ export class SyncedObjectManager {
     */
     static removeFromLocalStorage(keyPattern, affectedObjects = "ignore") {
         // Validate input:
-        if (affectedObjects !== "decouple" || affectedObjects !== "delete" || affectedObjects !== "ignore") {
-            throw new SyncedObjectError(`Failed to remove from local storage: affectedObjects must be "decouple", "delete", "ignore, found: '${returnType}'.`, keyPattern, "removeFromLocalStorage");
+        if (affectedObjects !== "decouple" && affectedObjects !== "delete" && affectedObjects !== "ignore") {
+            throw new SyncedObjectError(`Failed to remove from local storage: affectedObjects must be 'decouple', 'delete', 'ignore', found: '${affectedObjects}'.`, keyPattern, "removeFromLocalStorage");
         }
         // Find keys:
-        const matchingKeys = this.findInLocalStorage(keyPattern, "key");
-        matchingKeys.map((key) => this.localStorage.removeItem(key));
+        const matchingKeys = SyncedObjectManager.findInLocalStorage(keyPattern, "key");
+        matchingKeys.map((key) => SyncedObjectManager.localStorage.removeItem(key));
         // Handle affected objects:
         if (affectedObjects === "ignore") {
             return matchingKeys;
         }
-        if (affectedObjects === "delete") {
+        if (affectedObjects === "decouple") {
             matchingKeys.map((key) => { 
-                const object = this.syncedObjects.get(key);
+                const object = SyncedObjectManager.syncedObjects.get(key);
                 if (object) {
-                    object.modify = function () {
-                        console.warn(`Synced Object Modification: object with key '${this.key}' has been deleted.`);
-                    }
-                    object.data = null;
-                    this.syncedObjects.delete(key);
+                    object.type = "temp";
                 }
             });
             return matchingKeys;
         }
-        if (affectedObjects === "decouple") {
-            matchingKeys.map((key) => { 
-                const object = this.syncedObjects.get(key);
-                if (object) {
-                    object.type = "temp";
-                }
+        if (affectedObjects === "delete") {
+            matchingKeys.map((key) => {
+                SyncedObjectManager.deleteSyncedObject(key);
             });
             return matchingKeys;
         }
@@ -306,16 +304,17 @@ export class SyncedObjectManager {
             if (!key || !type) {
                 errors.push("missing parameters 'key' or 'type'");
             }
-            if (!typeof key === "string" || !value.length > 0) {
+            if (!typeof key === "string" || key.length <= 0) {
                 errors.push("parameter 'key' must be a non-empty string");
             }
-            if (type !== "temp" || type !== "local" || type !== "custom") {
+            if (type !== "temp" && type !== "local" && type !== "custom") {
                 errors.push("parameter 'type' must be either 'temp', 'local', or 'custom'");
             }
-            if (debounceTime && (!typeof debounceTime === "number" || !debounceTime >= 0)) {
+            if (debounceTime && (typeof debounceTime !== "number" || debounceTime < 0)) {
+                console.log(debounceTime);
                 errors.push("parameter 'debounceTime' must be a non-negative number");
             }
-            if (reloadBehavior && (reloadBehavior !== "prevent" || reloadBehavior !== "allow" || reloadBehavior !== "finish")) {
+            if (reloadBehavior && (reloadBehavior !== "prevent" && reloadBehavior !== "allow" && reloadBehavior !== "finish")) {
                 errors.push("parameter 'reloadBehavior' must be either 'prevent', 'allow', or 'finish'");
             }
             if (pull && (!typeof pull === "function")) {
@@ -331,7 +330,7 @@ export class SyncedObjectManager {
                 errors.push("parameter 'callbackFunctions.onError' must be a function");
             }
             if (errors.length > 0) {
-                throw new SyncedObjectError(`Failed to initialize synced object: ${errors.join('; ')}`, key, "initializeSyncedObject");
+                throw new SyncedObjectError(`Failed to initialize synced object:\n[${errors.join('; \n')}]`, key, "initializeSyncedObject");
             }
         }
         if (name === "modification") {
@@ -344,7 +343,7 @@ export class SyncedObjectManager {
             const key = syncedObject.key;
             const errors = [];
             if (property) {
-                if (!(typeof property === "string" || property.length > 0)) {
+                if (typeof property !== "string" || property.length <= 0) {
                     errors.push("parameter 'property' must be a non-empty string");
                 }
                 else {
@@ -353,13 +352,17 @@ export class SyncedObjectManager {
                     }
                 }
             }
-            if (debounceTime && (!typeof debounceTime === "number" || !debounceTime >= 0)) {
+            if (debounceTime && (typeof debounceTime !== "number" || debounceTime < 0)) {
                 errors.push("parameter 'debounceTime' must be a non-negative number");
             }
             if (errors.length > 0) {
-                throw new SyncedObjectError(`Failed to modify due to invalid params: ${errors.join('; ')}`, key, "modify");
+                throw new SyncedObjectError(`Failed to modify due to invalid params:\n[${errors.join('; \n')}]`, key, "modify");
             }
         }
+    }
+    static generateComponentId() {
+        this.componentCounter++;
+        return this.componentCounter;
     }
     static emitEvent(syncedObject, status) {
         // Emit an event to components.
@@ -529,13 +532,13 @@ export class SyncedObject {
 
     /**
      * A member function to handle modifications to the synced object.
-     * @param {string|number} arg1 The property to modify, or the debounce time. 
-     * @param {number|undefined} arg2 The debounce time, if property is provided.
+     * @param {string|number|undefined} arg1 (Optional) The property to modify, or debounce time. 
+     * @param {number|undefined} arg2 (Optional) The debounce time, if property is provided.
      * @returns {Object} The synced object's data field.
      * @example 
-     * myObject.modify(); // Modifies 'myObject', handling rerenders, syncing, and callbacks.
-     * myObject.modify(1000).prop1 = "new value"; // Sets myObject.data.prop1 to "new value", modifying 'myObject' with a sync debounce time of 1000ms.
-     * myObject.modify("prop1", 1000); // Modifies 'myObject.prop1', with a sync debounce time of 1000ms.
+     * myObject.modify(); // Modifies 'myObject' with its default sync debounce time. Handles rerenders, syncing, and callbacks.
+     * myObject.modify(1000).prop1 = "new value"; // Sets myObject.data.prop1 to "new value", modifying 'myObject' with a debounce time of 1000ms.
+     * myObject.modify("prop1", 1000); // Modifies 'myObject.prop1', with a debounce time of 1000ms.
      */
     modify(arg1, arg2) {
         SyncedObjectManager.handleModifications(this, arg1, arg2);
