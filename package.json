@@ -1,6 +1,6 @@
 {
   "name": "react-synced-object",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "description": "A lightweight, performant, and powerful package to synchronize state across react components.",
   "main": "index.js",
   "scripts": {

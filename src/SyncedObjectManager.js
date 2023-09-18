@@ -19,7 +19,7 @@ export class SyncedObjectManager {
     * @param {boolean} [options.safeMode=true] - Whether safe mode is enabled.
     * @returns {SyncedObject} The newly created synced object.
     * @example
-    * const myObject = SyncedObjectManager.initializeSyncedObject("myObject", "local"};
+    * const myObject = initializeSyncedObject("myObject", "local"};
     */
     static initializeSyncedObject(key, type, options) {
         // Check for duplicates:
@@ -56,7 +56,7 @@ export class SyncedObjectManager {
      * @param {string} key Requested object key.
      * @returns {SyncedObject|undefined} The requested synced object, or undefined if nonexistent.
      * @example
-     * const myObject = SyncedObjectManager.getSyncedObject("myObject"); // Returns undefined if 'myObject' does not exist.
+     * const myObject = getSyncedObject("myObject"); // Returns undefined if 'myObject' does not exist.
      */
     static getSyncedObject(key) {
         return SyncedObjectManager.syncedObjects.get(key);
@@ -65,15 +65,20 @@ export class SyncedObjectManager {
      * Delete the {@link SyncedObject} with the provided key from the object manager, if it exists.
      * @param {string} key Requested object key.
      * @example
-     * SyncedObjectManager.deleteSyncedObject("myObject"); // myObject.modify() will now do nothing.
+     * deleteSyncedObject("myObject"); // myObject.modify() will now throw an error.
      */
     static deleteSyncedObject(key) {
         const object = SyncedObjectManager.syncedObjects.get(key);
         if (object) {
-            object.modify = function () {
-                console.warn(`Synced Object Modification: object with key '${this.key}' has been deleted.`);
-            }
             SyncedObjectManager.syncedObjects.delete(key);
+            clearTimeout(SyncedObjectManager.pendingSyncTasks.get(key));
+            SyncedObjectManager.pendingSyncTasks.delete(key);
+            object.modify = function () {
+                throw new SyncedObjectError(`Synced Object Modification: object with key '${key}' has been deleted.`, key, "deleteSyncedObject");
+            }
+            setTimeout(() => {
+                SyncedObjectManager.updateComponents(object, { requestType: "delete", success: null, error: null });
+            }, 0);
         }
     }
 
@@ -177,16 +182,19 @@ export class SyncedObjectManager {
         }
         // Rerender dependent components:
         setTimeout(() => {
-            this.emitEvent(syncedObject, { requestType: "modify", success: null, error: null });
+            this.updateComponents(syncedObject, { requestType: "modify", success: null, error: syncedObject.state.error || null });
         }, 0);
         // Handle syncing:
         if (debounceTime === 0) {
+            clearTimeout(this.pendingSyncTasks.get(syncedObject.key));
+            this.pendingSyncTasks.delete(syncedObject.key);
             setTimeout(() => {
                 this.forceSyncTask(syncedObject, "push");
             }, 0);
-            return;
         }
-        this.queueSyncTask(syncedObject, debounceTime);
+        else {
+            this.queueSyncTask(syncedObject, debounceTime);
+        }
     }
     static async queueSyncTask(syncedObject, debounceTime) {
         // Queue an object to be pushed, debouncing multiple requests.
@@ -274,8 +282,8 @@ export class SyncedObjectManager {
         if (error && syncedObject.onError) {
             syncedObject.onError(syncedObject, status);
         }
-        this.emitEvent(syncedObject, status);
-        syncedObject.changelog = [];
+        this.updateComponents(syncedObject, status);
+        if (success) syncedObject.changelog = [];
         syncedObject.callerId = null;
     }
     
@@ -364,14 +372,15 @@ export class SyncedObjectManager {
         this.componentCounter++;
         return this.componentCounter;
     }
-    static emitEvent(syncedObject, status) {
-        // Emit an event to components.
+    static updateComponents(syncedObject, status) {
+        // Update syncedObject state:
+        syncedObject.state.success = status.success;
+        syncedObject.state.error = status.error;
+        // Rerender components with hook 'useSyncedObject':
         const event = new CustomEvent("syncedObjectEvent", { detail: {
             key: syncedObject.key,            
             changelog: syncedObject.changelog,
             requestType: status.requestType,
-            success: status.success,
-            error: status.error,
             callerId: syncedObject.callerId
         } });
         document.dispatchEvent(event);
@@ -441,6 +450,10 @@ export class SyncedObject {
         if (push) this.push = push;
         if (onSuccess) this.onSuccess = onSuccess;
         if (onError) this.onError = onError;
+        this.state = {
+            success: type === "temp" ? true : null,
+            error: null
+        };
     }
 
     /** 
@@ -463,18 +476,25 @@ export class SyncedObject {
 
     /**
      * The changelog of properties pending sync.
+     * - Useful to rerender components with certain property dependencies.
+     * - Passed to custom sync functions.
      * @type {string[]}
     */
     changelog;
 
     /**
      * The default sync debounce time.
+     * - Used when no debounce time is provided to {@link SyncedObject.modify}.
+     * - Future modify calls will reset the debounce timer.
      * @type {*}
     */
     debounceTime;
 
     /**
      * The behavior on reload of the synced object.
+     * - `prevent`: Stops a page unload with a default popup if the object is syncing.
+     * - `allow`: Allows a page unload even if the object is syncing.
+     * - `finish`: Attempts to force sync before page unload.
      * @type {"prevent"|"allow"|"finish"}
     */
     reloadBehavior;
@@ -531,6 +551,15 @@ export class SyncedObject {
     onError;
 
     /**
+     * The state of the synced object.
+     * @type {Object}
+     * @property `success` Whether the last sync was successful. True, false, or null if syncing.
+     * @property `error` The error of the last sync, else null.
+     * @default success: null, error: null
+     */
+    state;
+
+    /**
      * A member function to handle modifications to the synced object.
      * @param {string|number|undefined} arg1 (Optional) The property to modify, or debounce time. 
      * @param {number|undefined} arg2 (Optional) The debounce time, if property is provided.
@@ -541,6 +570,7 @@ export class SyncedObject {
      * myObject.modify("prop1", 1000); // Modifies 'myObject.prop1', with a debounce time of 1000ms.
      */
     modify(arg1, arg2) {
+        this.callerId = null;
         SyncedObjectManager.handleModifications(this, arg1, arg2);
         return this.data;
     }

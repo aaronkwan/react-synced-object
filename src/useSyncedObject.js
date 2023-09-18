@@ -7,7 +7,7 @@ import { SyncedObjectManager, SyncedObjectError, SyncedObject } from './SyncedOb
  * @property {Object|null} syncedData - The synced object's data.
  * @property {boolean|null} syncedSuccess - The success state of the last sync attempt: either true, false, or null if syncing.
  * @property {Error|null} syncedError - The error object generated from the last sync attempt, if any.
- * @property {function(string|number, number|undefined): void} modify - A function for modifying the synced object, with the same arguments as {@link SyncedObject.modify}.
+ * @property {function(string|number|undefined, number|undefined): void} modify - A function for modifying the synced object, with the same arguments as {@link SyncedObject.modify}.
  */
 
 /**
@@ -114,10 +114,17 @@ const useSyncedObject = (key, options) => {
         // Initialize synced object:
         const syncedObject = SyncedObjectManager.getSyncedObject(key);
         if (!syncedObject) {
-            return;
+            setSyncedObject(null);
+            setSyncedData(null);
+            setSyncedSuccess(null);
+            setSyncedError(null);
         }
-        setSyncedObject(syncedObject);
-        setSyncedData(syncedObject.data);
+        else {
+            setSyncedObject(syncedObject);
+            setSyncedData(syncedObject.data);
+            setSyncedSuccess(syncedObject.state.success);
+            setSyncedError(syncedObject.state.error);
+        }
     }, [rerender]);
     useEffect(() => {
         // Checks:
@@ -132,6 +139,11 @@ const useSyncedObject = (key, options) => {
             if (event.detail.key !== key) {
                 return;
             }
+            // Delete check:
+            if (event.detail.requestType === "delete") {
+                setRerender(rerender => rerender + 1);
+                return;
+            }
             // Property check:
             if (properties.length > 0 && event.detail.changelog.length > 0) {
                 const containsCommonElement = event.detail.changelog.some(element => properties.includes(element));
@@ -140,33 +152,18 @@ const useSyncedObject = (key, options) => {
                 }
             }
             // Dependency checks:
-            if (event.detail.requestType === "modify") {
-                setSyncedSuccess(event.detail.success);
-                if (dependencies.includes("modify")) {
-                    // console.log("rerendering due to modify");
-                    setRerender(rerender => rerender + 1);
-                    return;
-                }
-                if (dependencies.includes("modify_external") && event.detail.callerId !== componentId) {
-                    // console.log("rerendering due to modify_external");
-                    setRerender(rerender => rerender + 1);
-                    return;
-                }
+            if (event.detail.requestType === "modify" && 
+            (dependencies.includes("modify") || 
+            (dependencies.includes("modify_external") && event.detail.callerId !== componentId))) {
+                setRerender(rerender => rerender + 1);
                 return;
             }
             if (event.detail.requestType === "push" && dependencies.includes("push") ||
                 event.detail.requestType === "pull" && dependencies.includes("pull")) {
-                // console.log("rerendering due to " + event.detail.requestType);
-                setSyncedSuccess(event.detail.success);
-                setSyncedError(event.detail.error);
                 setRerender(rerender => rerender + 1);
                 return;
             }
             if (syncedError !== event.detail.error && dependencies.includes("error")) {
-                // console.log("syncedError: " + syncedError);
-                // console.log("rerendering due to error: ");
-                // console.log(event.detail.error);
-                setSyncedError(event.detail.error);
                 setRerender(rerender => rerender + 1);
                 return;
             }
