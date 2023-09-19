@@ -1,6 +1,6 @@
 {
   "name": "react-synced-object",
-  "version": "1.0.6",
+  "version": "1.1.0",
   "description": "A lightweight, performant, and powerful package to synchronize state across react components.",
   "main": "index.js",
   "scripts": {
@@ -11,11 +11,13 @@
     "url": "git+https://github.com/aaronkwan/react-synced-object.git"
   },
   "keywords": [
-    "synced",
+    "sync",
     "data",
     "local",
     "storage",
-    "rerender"
+    "update",
+    "debounce",
+    "hook"
   ],
   "author": "Aaron Kwan",
   "license": "ISC",

@@ -275,6 +275,12 @@ export class SyncedObjectManager {
     }
     static async handleCallBacks(syncedObject, status) {
         // Handle callbacks, emit events, and reset changelogs.
+        if (syncedObject.type === "temp") {
+            syncedObject.changelog = [];
+            syncedObject.callerId = null;
+            syncedObject.state.success = true;
+            return;
+        }
         const { requestType, success, error } = status;
         if (success && syncedObject.onSuccess) {
             syncedObject.onSuccess(syncedObject, status);
@@ -533,7 +539,7 @@ export class SyncedObject {
     push;
 
     /**
-     * The callback function called after a successful sync.
+     * The callback function called after a successful pull or push.
      * @param {SyncedObject} syncedObject The synced object itself.
      * @param {Object} status The status of the sync: { requestType, success, error }.
      * @type {Function}
@@ -542,7 +548,7 @@ export class SyncedObject {
     onSuccess;
 
     /**
-     * The callback function called after an unsuccessful sync.
+     * The callback function called after an unsuccessful pull or push.
      * @param {SyncedObject} syncedObject The synced object itself.
      * @param {Object} status The status of the sync: { requestType, success, error }.
      * @type {Function}
@@ -567,7 +573,7 @@ export class SyncedObject {
      * @example 
      * myObject.modify(); // Modifies 'myObject' with its default sync debounce time. Handles rerenders, syncing, and callbacks.
      * myObject.modify(1000).prop1 = "new value"; // Sets myObject.data.prop1 to "new value", modifying 'myObject' with a debounce time of 1000ms.
-     * myObject.modify("prop1", 1000); // Modifies 'myObject.prop1', with a debounce time of 1000ms.
+     * myObject.modify("prop1", 1000).prop1 = "new value"; // Sets the above, while modifying `myObject.prop1' with a debounce time of 1000ms.
      */
     modify(arg1, arg2) {
         this.callerId = null;

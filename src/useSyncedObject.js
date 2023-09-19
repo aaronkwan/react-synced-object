@@ -7,7 +7,7 @@ import { SyncedObjectManager, SyncedObjectError, SyncedObject } from './SyncedOb
  * @property {Object|null} syncedData - The synced object's data.
  * @property {boolean|null} syncedSuccess - The success state of the last sync attempt: either true, false, or null if syncing.
  * @property {Error|null} syncedError - The error object generated from the last sync attempt, if any.
- * @property {function(string|number|undefined, number|undefined): void} modify - A function for modifying the synced object, with the same arguments as {@link SyncedObject.modify}.
+ * @property {function(string|number|undefined, number|undefined): syncedData} modify - A function for modifying the synced object, with the same arguments as {@link SyncedObject.modify}.
  */
 
 /**
@@ -152,16 +152,16 @@ const useSyncedObject = (key, options) => {
                 const changelogEmpty = event.detail.changelog.length === 0;
                 const propertiesEmpty = properties.length === 0;
                 const propertiesContainsEmptyString = properties.includes("");
-                const changelogContainsProperty = event.detail.changelog.some(element => properties.includes(element));
                 if (changelogEmpty) {
-                    // modify() will rerender properties = [] || [""] || ["", "myProp"], but not properties = ["myProp"]
+                    // modify() will rerender properties = [] || [""] || ["", "myProp"], but not properties = ["myProp"].
                     if (propertiesEmpty || propertiesContainsEmptyString) {
                         setRerender(rerender => rerender + 1);
                     }
                     return;
                 }
                 else {
-                    // modify("myProp") will rerender properties = [""] || [..., "myProp"], but not ["", "myProp2"]
+                    // modify("myProp") will rerender properties = [""] || [..., "myProp"], but not ["", "myProp2"].
+                    const changelogContainsProperty = event.detail.changelog.some(element => properties.includes(element));
                     if (changelogContainsProperty || (propertiesContainsEmptyString && properties.length === 1)) {
                         setRerender(rerender => rerender + 1);
                     }
@@ -190,11 +190,11 @@ const useSyncedObject = (key, options) => {
     const [syncedData, setSyncedData] = useState(null);
     const [syncedSuccess, setSyncedSuccess] = useState(null);
     const [syncedError, setSyncedError] = useState(null);
-    const modify = (property, debounceTime) => {
+    const modify = (arg1, arg2) => {
         if (!syncedObject) return;
-        setSyncedSuccess(null);
         syncedObject.callerId = componentId;
-        return syncedObject.modify(property, debounceTime);
+        SyncedObjectManager.handleModifications(syncedObject, arg1, arg2);
+        return syncedObject.data;
     };
 
     // Exports:
