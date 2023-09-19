@@ -11,12 +11,12 @@ export class SyncedObjectManager {
     * @param {string} key The synced object's identifier.
     * @param {"temp"|"local"|"custom"} type The type of synced object, affecting sync behavior.
     * @param {Object} [options] - The options for initializing the synced object.
-    * @param {Object} [options.defaultValue={}] - The default value for the synced object.
-    * @param {number} [options.debounceTime=0] - The debounce time for modifications.
-    * @param {"prevent"|"allow"|"finish"} [options.reloadBehavior="prevent"] - The reload behavior.
-    * @param {Object} [options.customSyncFunctions] - Custom synchronization functions.
-    * @param {Object} [options.callbackFunctions] - Callback functions for synchronization events.
-    * @param {boolean} [options.safeMode=true] - Whether safe mode is enabled.
+    * @param {Object} [options.defaultValue={}]
+    * @param {number} [options.debounceTime=0]
+    * @param {"prevent"|"allow"|"finish"} [options.reloadBehavior="prevent"]
+    * @param {Object} [options.customSyncFunctions]
+    * @param {Object} [options.callbackFunctions]
+    * @param {boolean} [options.safeMode=true]
     * @returns {SyncedObject} The newly created synced object.
     * @example
     * const myObject = initializeSyncedObject("myObject", "local"};
@@ -491,7 +491,7 @@ export class SyncedObject {
     debounceTime;
 
     /**
-     * The behavior on reload of the synced object.
+     * The behavior upon attempted application unload.
      * - `prevent`: Stops a page unload with a default popup if the object is syncing.
      * - `allow`: Allows a page unload even if the object is syncing.
      * - `finish`: Attempts to force sync before page unload.

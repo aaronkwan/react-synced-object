@@ -12,11 +12,11 @@ import { SyncedObjectManager, SyncedObjectError, SyncedObject } from './SyncedOb
 
 /**
  * A custom hook for interacting with an existing synced object through a component.
- * @param {string} key The requested synced object key.
- * @param {Object} [options] - The options for configuring dependencies and properties.
- * @param {string|string[]} [options.dependencies=["modify", "pull", "push", "error"]] - An array of dependency names (possible: ["modify", "modify_external", "pull", "push", "error"]).
- * @param {string|string[]} [options.properties=[]] - An array of property names (default: []).
- * @param {boolean} [options.safeMode=true] - Whether to enable safe mode (default: true).
+ * @param {string} key
+ * @param {Object} [options]
+ * @param {string|string[]} [options.dependencies=["modify", "pull", "push", "error"]]
+ * @param {string|string[]} [options.properties=[""]]
+ * @param {boolean} [options.safeMode=true]
  * @returns {returnBundle} Several methods and properties for interacting with the synced object.
  * - `syncedObject`: The {@link SyncedObject} if it exists.
  * - `syncedData`: The synced object's data.
@@ -108,7 +108,7 @@ const useSyncedObject = (key, options) => {
         }
         return result;
     };
-    const { dependencies = ["modify", "pull", "push", "error"], properties = [], safeMode = true }
+    const { dependencies = ["modify", "pull", "push", "error"], properties = [""], safeMode = true }
      = useMemo(() => handleProps(key, options), [key]);
     useEffect(() => {
         // Initialize synced object:
@@ -144,19 +144,29 @@ const useSyncedObject = (key, options) => {
                 setRerender(rerender => rerender + 1);
                 return;
             }
-            // Property check:
-            if (properties.length > 0 && event.detail.changelog.length > 0) {
-                const containsCommonElement = event.detail.changelog.some(element => properties.includes(element));
-                if (!containsCommonElement) {
-                    return;
-                }
-            }
             // Dependency checks:
             if (event.detail.requestType === "modify" && 
             (dependencies.includes("modify") || 
             (dependencies.includes("modify_external") && event.detail.callerId !== componentId))) {
-                setRerender(rerender => rerender + 1);
-                return;
+                // Property checks:
+                const changelogEmpty = event.detail.changelog.length === 0;
+                const propertiesEmpty = properties.length === 0;
+                const propertiesContainsEmptyString = properties.includes("");
+                const changelogContainsProperty = event.detail.changelog.some(element => properties.includes(element));
+                if (changelogEmpty) {
+                    // modify() will rerender properties = [] || [""] || ["", "myProp"], but not properties = ["myProp"]
+                    if (propertiesEmpty || propertiesContainsEmptyString) {
+                        setRerender(rerender => rerender + 1);
+                    }
+                    return;
+                }
+                else {
+                    // modify("myProp") will rerender properties = [""] || [..., "myProp"], but not ["", "myProp2"]
+                    if (changelogContainsProperty || (propertiesContainsEmptyString && properties.length === 1)) {
+                        setRerender(rerender => rerender + 1);
+                    }
+                    return;
+                }
             }
             if (event.detail.requestType === "push" && dependencies.includes("push") ||
                 event.detail.requestType === "pull" && dependencies.includes("pull")) {
@@ -181,6 +191,7 @@ const useSyncedObject = (key, options) => {
     const [syncedSuccess, setSyncedSuccess] = useState(null);
     const [syncedError, setSyncedError] = useState(null);
     const modify = (property, debounceTime) => {
+        if (!syncedObject) return;
         setSyncedSuccess(null);
         syncedObject.callerId = componentId;
         return syncedObject.modify(property, debounceTime);

@@ -24,7 +24,9 @@ A lightweight, efficient, and versatile package for seamless state synchronizati
 ## Usage
 - Note: Some parameters, options, and use cases are omitted for brevity - see [below](#details) for the full breakdown.
 ### Setup
-```npm install react-synced-object```
+```javascript 
+npm install react-synced-object
+```
 
 ### Create a Synced Object
 ```javascript
@@ -67,16 +69,15 @@ myObject.modify(0);
 ```javascript
 import { useSyncedObject } from 'react-synced-object';
 function MyComponent() {
-  const { syncedObject, modify } = useSyncedObject("myObject");
-  // Set myProperty to the user's input, then handle modifications with myObject's debounce time of 5000 ms:
+  const { syncedObject } = useSyncedObject("myObject");
+  // Set myProperty to the input's value, then handle modifications with myObject's debounce time of 5000 ms:
   return (
     <input onChange={(event) => {syncedObject.modify().myProperty = event.target.value}}></input>
   );
 }
 ```
-- In both examples, we call a `modify` function, which syncs state across the entire application, and in this case, to local storage as well.
-- `modify()` returns `SyncedObject.data`, meaning we can chain a property modification with the actual function call.
-- `modify` from `useSyncedObject` and the `modify` method of `myObject` itself are actually quite similar - the difference arises in a single `useSyncedObject` hook option, discussed below.
+- The `modify` function immediately syncs state accross the entire application and, in this case, prepares to update local storage. 
+- Other parameters and specific use cases are discussed below.
 
 ## Details
 - Note: All interactables have JSDoc annotations with helpful information, as well.
@@ -86,15 +87,112 @@ function MyComponent() {
 - This means that synced objects will be shared across the same JavaScript environment (such as between separate tabs or windows), and will persist until page reload.
 - This package was stress-tested with an upcoming full-stack application.
 
-### SyncedObject
-A `SyncedObject` is a wrapper class for data. Every instance must be initialized through `initializeSyncedObject` with a key and type.
+### SyncedObject Initialization
+A `SyncedObject` is a wrapper class for data. Every instance must be initialized through `initializeSyncedObject` with a key, type, and (optional) options.
 - `key`: Any unique identifier, usually a string.
 - `type`: Either "temp", "local", or "custom".
-  - `temp`: Intended for application-wide state, such as form data, temporary preferences, and other data that refreshes every session. `temp` objects don't push or pull data.
-  - `local`: Intended for persistent data, such as authentication status, user-specific options, and other data that should persist across sessions. `local` objects automatically pull from / push to the browser's local storage.
-  - `custom`: A customizable version of a `temp` object, intended for state such as user profiles, page content, and other data that should interact with third-party APIs. `custom` objects automatically call your custom functions, `push` and `pull`.
 
+| Type   | Description                                     |
+|--------|-------------------------------------------------|
+| "temp" | Temporary application-wide state - won't push or pull data.  |
+| "local" | Persistent state - will interact with the browser's local storage. |
+| "custom" | Customizable state - will call your custom sync functions. |
+|       | Upon initialization, a `local` or `custom` synced object will attempt to pull data. Upon modification, the synced object will attempt to push data.
 
+- `options`: An optional object parameter with several properties.
 
-Happy Coding!
+| Property   | Description                                     |
+|--------|-------------------------------------------------|
+| `defaultValue` = {} | The default value of `SyncedObject.data` before the first sync. Serves as the initial value for `temp` and `local` objects.  |
+| `debounceTime` = 0 | The period in ms to defer sync after `modify`. Multiple invocations will reset this timer. |
+| `reloadBehavior` = "prevent" | The behavior upon attempted application unload. <ul><li>"prevent": Stops a page unload with a default popup *if* the object is pending sync. </li><li>"allow": Allows a page unload even if the object has not synced yet.</li><li>"finish": Attempts to force sync before page unload. <br></br>**Warning**: "finish" may not work as expected with custom sync functions, due to the nature of async functions and lack of callbacks.</li></ul> |
+| `customSyncFunctions` = <br></br> { `pull`: undefined, `push`: undefined } | Custom synchronization callbacks invoked automatically by a `custom` synced object. <ul><li>`pull(syncedObject : SyncedObject)`: Return the requested data if successful, `null` to invoke `push` instead, or throw an error. </li><li>`push(syncedObject : SyncedObject)`: Return anything if successful, or throw an error. </li></ul> |
+| `callbackFunctions` = <br></br> { `onSuccess`: undefined, `onError`: undefined } | Custom callbacks invoked after a sync attempt. <ul><li>`onSuccess(syncedObject : SyncedObject, status : {requestType, success, error})`</li><li>`onError(syncedObject : SyncedObject, status : {requestType, success, error})`</li><li> The `status` parameter contains properties `requestType`, `success`, and `error`. </li><li>`requestType` will be "pull" or "push", `success` will be true or false, and `error` will be null or an Error object.</li></ul> |
+| `safeMode` = true | Whether to conduct initialization checks and warnings. You may disable for performance once throughly tested.  |
+
+### SyncedObject Runtime Properties
+A `SyncedObject` has several runtime properties and methods which provide useful behavior.
+#### `SyncedObject.data` (property) 
+- This is where the information payload is stored. Access it as a normal property, change it as needed, and then call the below:
+#### `SyncedObject.modify` (method) 
+- This is a function to signify that a change was made to `SyncedObject` data.
+- It immediately updates state accross the entire application, while preparing to sync to external sources (in the case of `local` and `custom` objects).
+- Additionally, it returns `SyncedObject.data`, allowing us to chain property modifications with the function call itself, as seen in the above example.
+
+| Modify   | Description                                     |
+|--------|-------------------------------------------------|
+| `modify()` | Handle modifications with the `SyncedObject`'s default debounce time.
+| `modify(1000)` | Handle modifications, specifying the debounce time in milliseconds. This will overwrite the timers of any pending sync tasks for that `SyncedObject`.
+| `modify("myProperty")` | Same as `modify()`, but specifying the property being modified. This is helpful: <ol><li>For selective rerendering of `useSyncedObject` components with property dependencies (see below)</li><li>To keep track of property changes when syncing a `custom` object - see below. </li></ol>
+| `modify("myProperty", 1000)` | Combining the above two calls.
+#### `SyncedObject.changelog` (property) 
+- An array tracking property names modified using `modify(propertyName)`. It is automaticaly populated and cleared upon successful push. It is accessible from the `SyncedObject` itself, which can be helpful in custom sync functions.
+#### `SyncedObject.state` (property)
+- An object with two properties: `success` and `error`. Tracks the status of the last sync.
+
+| Property   | Description                                     |
+|--------|-------------------------------------------------|
+|`success`| Whether the last sync was successful. True, false, or null if syncing.
+|`error`| The error of the last sync, else null.
+
+### useSyncedObject
+- `useSyncedObject` is an easy-to-use hook for interacting with an initialized `SyncedObject` from any component.
+- Traditional approaches to updating component state, such as prop chaining or Context, can lead to rerendering issues, especially when dealing with complex, nested data objects. This is due to React's shallow comparison method, which often results in either unsuccessful or unnecessary rerenders. 
+- In contrast, `useSyncedObject` establishes direct dependencies to specific `SyncedObject` properties using event listeners. This results in highly accurate and performant component updates.
+```javascript
+  const options = {dependencies: ["modify"], properties: ["myProperty"], safeMode: true};
+  const { 
+  syncedObject, 
+  syncedData, 
+  syncedSuccess, 
+  syncedError, 
+  modify 
+  } = useSyncedObject("myObject", options);
+  // This component will rerender when property `myProperty` of "myObject" is modified.
+```
+#### Options
+- You can specify exactly when a component should rerender, through a combination of dependent events and property names.
+
+#### `options.dependencies`
+- The conditions in which component should rerender itself. Leave undefined for the default (all events), set equal to exactly one event, or set equal to an array of events.
+
+| Dependencies   | Description                                     |
+|--------|-------------------------------------------------|
+|`dependencies` = ["modify", "pull", "push", "error"] \|\| *undefined* | The default. Will rerender on every event.
+|`dependencies` = [] | No dependencies. Will not rerender on any synced object event.
+|`dependencies` = ["modify"] | Rerenders when the synced object is modified by any source.
+|`dependencies` = ["modify_external"] | Rerenders when the synced object is modified **by an external source**. This is why `useSyncedObject` returns its own `modify` function. Useful for components that will be rerendering anyway, such as an input element.
+|`dependencies` = ["pull"] | Rerenders when the synced object data changes due to a pull.
+|`dependencies` = ["push"] | Rerenders when the synced object is pushed.
+|`dependencies` = ["error"] | Rerenders when the `status.error` of the synced object changes.
+
+#### `options.properties`
+- Upon `modify` or `modify_external`, the affected properties (found in `SyncedObject.changelog`) for which a component should rerender itself. Leave undefined or set as `[""]` for the default (all properties), set equal to exactly one property, or set equal to an array of properties.
+
+| Properties   | Description                                     |
+|--------|-------------------------------------------------|
+|`properties` = [""] \|\| *undefined* | The default. Will rerender on any event regardless if the changelog has properties or not. <br></br> Example: `modify()` and `modify("anyProperty")`.
+|`properties` = [] | Will **only** rerender if the changelog has no properties. <br></br> Example: `modify()`.
+|`properties` = ["myProperty"] | Will **only** rerender if the changelog includes "myProperty". <br></br> Example: `modify("myProperty)`.
+|`properties` = ["", "myProperty"] | Will rerender if the changelog includes "myProperty" or if the changelog is empty. <br></br> Example: `modify()` and `modify("myProperty")`, <br></br> Counter-Example: `modify("anotherProperty)`.
+
+- Note that in order for a rerender to occur, both the `dependencies` and `properties` must be satisfied.
+
+#### `options.safeMode`
+- Similar to the safeMode option from `initializeSyncedObject` - default `true`.
+
+#### Return Bundle
+- Most of `useSyncedObject` returns are aliases to `SyncedObject` properties. However, `modify` has a special use case.
+
+| Return Value   | Description                                     |
+|--------|-------------------------------------------------|
+| syncedObject | Equivalent to `getSyncedObject`. Either `SyncedObject` or null.
+| syncedData | Equivalent to `SyncedObject.data`, or null.
+| syncedSuccess | Equivalent to `SyncedObject.state.success`, or null.
+| syncedError | Equivalent to `SyncedObject.state.error`, or null.
+| modify | Similar to `SyncedObject.modify`, if `SyncedObject` exists. <ul><li>This version of `modify` records the component that triggered the modification.</li><li>This is useful when using "modify_external" as a dependency, to avoid unnecessary rerenders</li></ul>
+
+## Outro
+- Feel free to comment or bug report [here](https://github.com/aaronkwan/react-synced-object/issues). 
+- Happy Coding!
 
