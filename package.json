@@ -1,10 +1,10 @@
 {
   "name": "react-synced-object",
-  "version": "1.1.0",
-  "description": "A lightweight, performant, and powerful package to synchronize state across react components.",
+  "version": "1.1.1",
+  "description": "A lightweight, efficient, and versatile package for seamless state synchronization across a React application.",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\""
+    "test": "echo \"No test specified\""
   },
   "repository": {
     "type": "git",
@@ -17,7 +17,8 @@
     "storage",
     "update",
     "debounce",
-    "hook"
+    "hook",
+    "component"
   ],
   "author": "Aaron Kwan",
   "license": "ISC",
