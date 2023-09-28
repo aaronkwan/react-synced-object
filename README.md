@@ -116,7 +116,7 @@ A `SyncedObject` is a wrapper class for data. Every instance must be initialized
 | `reloadBehavior` = "prevent" | The behavior upon attempted application unload. <ul><li>"prevent": Stops a page unload with a default popup *if* the object is pending sync. </li><li>"allow": Allows a page unload even if the object has not synced yet.</li><li>"finish": Attempts to force sync before page unload. <br></br>**Warning**: "finish" may not work as expected with custom sync functions, due to the nature of async functions and lack of callbacks.</li></ul> |
 | `customSyncFunctions` = <br></br> { `pull`: undefined, `push`: undefined } | Custom synchronization callbacks invoked automatically by a `custom` synced object. <ul><li>`pull(syncedObject : SyncedObject)`: Return the requested data if successful, `null` to invoke `push` instead, or throw an error. </li><li>`push(syncedObject : SyncedObject)`: Return anything if successful, or throw an error. </li></ul> |
 | `callbackFunctions` = <br></br> { `onSuccess`: undefined, `onError`: undefined } | Custom callbacks invoked after a `local` / `custom` object's pull or push attempt. <ul><li>`onSuccess(syncedObject : SyncedObject, status : {requestType, success, error})`</li><li>`onError(syncedObject : SyncedObject, status : {requestType, success, error})`</li><li> The `status` parameter contains properties `requestType`, `success`, and `error`. </li><li>`requestType` will be "pull" or "push", `success` will be true or false, and `error` will be null or an Error object.</li></ul> |
-| `safeMode` = true <a name="1syncedobject-safemode"></a> | Whether to conduct initialization checks and warnings. You may disable for performance once throughly tested.  |
+| `safeMode` = `true` or `false` | Whether to conduct initialization checks and warnings for this synced object. Default is `true` in development, `false` in production. |
 
 ## SyncedObject Runtime Properties
 A `SyncedObject` has several runtime properties and methods which provide useful behavior.
@@ -148,7 +148,7 @@ A `SyncedObject` has several runtime properties and methods which provide useful
 - Traditional approaches to updating component state, such as prop chaining or Context, can lead to rerendering issues, especially when dealing with complex, nested data objects. This is due to React's shallow comparison method, which often results in either unsuccessful or unnecessary rerenders. 
 - In contrast, `useSyncedObject` establishes direct dependencies to specific `SyncedObject` properties using event listeners, resulting in highly accurate and performant component updates.
 ```javascript
-  const options = {dependencies: ["modify"], properties: ["myProperty"], safeMode: true};
+  const options = {dependencies: ["modify"], properties: ["myProperty"]};
   const { 
   syncedObject, 
   syncedData, 
@@ -187,7 +187,7 @@ A `SyncedObject` has several runtime properties and methods which provide useful
 - Note that in order for a rerender to occur, both the `dependencies` and `properties` must be satisfied.
 
 #### `options.safeMode`
-- Similar to the `safeMode` option from [`initializeSyncedObject`](#syncedobject-initialization) - default `true`.
+- Similar to the `safeMode` option from [`initializeSyncedObject`](#syncedobject-initialization) - default is `true` in development, `false` in production.
 
 ### Return Bundle
 - Most of `useSyncedObject` returns are aliases to `SyncedObject` properties. However, `modify` has a special use case.

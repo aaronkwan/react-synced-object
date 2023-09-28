@@ -16,7 +16,7 @@ import { SyncedObjectManager, SyncedObjectError, SyncedObject } from './SyncedOb
  * @param {Object} [options]
  * @param {string|string[]} [options.dependencies=["modify", "pull", "push", "error"]]
  * @param {string|string[]} [options.properties=[""]]
- * @param {boolean} [options.safeMode=true]
+ * @param {boolean} [options.safeMode=true | false]
  * @returns {returnBundle} Several methods and properties for interacting with the synced object.
  * - `syncedObject`: The {@link SyncedObject} if it exists.
  * - `syncedData`: The synced object's data.
@@ -44,7 +44,7 @@ const useSyncedObject = (key, options) => {
         if (!options) {
             return result;
         }
-        const safeMode = options.safeMode === false ? false : true;
+        const safeMode = options.safeMode === undefined ? SyncedObjectManager.globalSafeMode : options.safeMode;
         result.safeMode = safeMode;
         if (options.dependencies) {
             if (safeMode) {
@@ -108,7 +108,7 @@ const useSyncedObject = (key, options) => {
         }
         return result;
     };
-    const { dependencies = ["modify", "pull", "push", "error"], properties = [""], safeMode = true }
+    const { dependencies = ["modify", "pull", "push", "error"], properties = [""], safeMode }
      = useMemo(() => handleProps(key, options), [key]);
     useEffect(() => {
         // Initialize synced object:

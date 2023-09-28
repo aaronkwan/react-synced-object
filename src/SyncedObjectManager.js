@@ -4,6 +4,7 @@ export class SyncedObjectManager {
     static syncedObjects = new Map();
     static pendingSyncTasks = new Map();
     static componentCounter = 0;
+    static globalSafeMode = (process.env.NODE_ENV === "production") ? false : true;
 
     // Main Interface:
     /**
@@ -16,7 +17,7 @@ export class SyncedObjectManager {
     * @param {"prevent"|"allow"|"finish"} [options.reloadBehavior="prevent"]
     * @param {Object} [options.customSyncFunctions]
     * @param {Object} [options.callbackFunctions]
-    * @param {boolean} [options.safeMode=true]
+    * @param {boolean} [options.safeMode=true | false]
     * @returns {SyncedObject} The newly created synced object.
     * @example
     * const myObject = initializeSyncedObject("myObject", "local"};
@@ -27,7 +28,7 @@ export class SyncedObjectManager {
             return SyncedObjectManager.syncedObjects.get(key);
         }
         // Create synced object:
-        const { defaultValue = {}, debounceTime = 0, reloadBehavior = "prevent", customSyncFunctions, callbackFunctions, safeMode = true } = options || {};
+        const { defaultValue = {}, debounceTime = 0, reloadBehavior = "prevent", customSyncFunctions, callbackFunctions, safeMode = SyncedObjectManager.globalSafeMode } = options || {};
         const syncedObjectData = {
             key: key,
             type: type,
@@ -318,14 +319,15 @@ export class SyncedObjectManager {
             if (!key || !type) {
                 errors.push("missing parameters 'key' or 'type'");
             }
-            if (!typeof key === "string" || key.length <= 0) {
-                errors.push("parameter 'key' must be a non-empty string");
-            }
-            if (type !== "temp" && type !== "local" && type !== "custom") {
-                errors.push("parameter 'type' must be either 'temp', 'local', or 'custom'");
+            else {
+                if (!typeof key === "string" || key.length <= 0) {
+                    errors.push("parameter 'key' must be a non-empty string");
+                }
+                if (type !== "temp" && type !== "local" && type !== "custom") {
+                    errors.push("parameter 'type' must be either 'temp', 'local', or 'custom'");
+                }
             }
             if (debounceTime && (typeof debounceTime !== "number" || debounceTime < 0)) {
-                console.log(debounceTime);
                 errors.push("parameter 'debounceTime' must be a non-negative number");
             }
             if (reloadBehavior && (reloadBehavior !== "prevent" && reloadBehavior !== "allow" && reloadBehavior !== "finish")) {
@@ -506,7 +508,8 @@ export class SyncedObject {
     reloadBehavior;
 
     /**
-     * Whether safe mode checks and warnings are enabled.
+     * Whether safe mode checks and warnings are enabled. 
+     * - Defaults to `true` in development, `false` in production.
      * @type {boolean}
     */
     safeMode;
