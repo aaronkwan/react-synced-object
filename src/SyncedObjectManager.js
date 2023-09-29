@@ -48,7 +48,7 @@ export class SyncedObjectManager {
         // Add to storage:
         SyncedObjectManager.syncedObjects.set(key, syncedObject);
         // Initial sync:
-        SyncedObjectManager.forceSyncTask(syncedObject, "pull");
+        SyncedObjectManager.queueSyncTask(syncedObject, 0, "pull");
         // Return:
         return syncedObject;
     }
@@ -81,6 +81,54 @@ export class SyncedObjectManager {
                 SyncedObjectManager.updateComponents(object, { requestType: "delete", success: null, error: null });
             }, 0);
         }
+    }
+    /**
+     * Update the {@link SyncedObject} data with the provided key, attempt sync, then return.
+     * - Waits for any pending sync requests to finish before updating.
+     * - Provides the resulting state after synchronization. 
+     * @param {string} key Requested object key.
+     * @param {Object|value} updater Overwrites the specified properties of `SyncedObject.data` with the provided values, or the entire field itself.
+     * @returns {Promise<SyncedObject>} The updated synced object. 
+     * @throws {SyncedObjectError} If the object does not exist.
+     * @example
+     * const myObject = await modifySyncedObject("myObject", { prop1: "new value", prop2: "new value2" });
+     * console.log(myObject.data.prop1); // "new value"
+     * console.log(myObject.state.success); // true
+     */
+    static async updateSyncedObject(key, updater) {
+        // Find synced object:
+        const object = SyncedObjectManager.getSyncedObject(key);
+        if (!object) {
+            throw new SyncedObjectError(`Synced Object Modification: object with key '${key}' does not exist.`, key, "updateSyncedObject");
+        }
+        // Wait for pending syncs:
+        if (SyncedObjectManager.pendingSyncTasks.has(key)) {
+            await new Promise(resolve => {
+                const intervalId = setInterval(() => {
+                    if (!SyncedObjectManager.pendingSyncTasks.has(key)) {
+                        clearInterval(intervalId);
+                        resolve();
+                    }
+                }, 100);
+            });
+        }
+        // Modify object:
+        if (typeof updater === 'object') {
+            for (const [property, value] of Object.entries(updater)) {
+                object.data[property] = value;
+                if (!object.changelog.includes(property)) {
+                    object.changelog.push(property);
+                }
+            }
+        } else {
+            object.data = updater;
+        }
+        // Sync object:
+        setTimeout(() => {
+            SyncedObjectManager.updateComponents(object, { requestType: "modify", success: null, error: object.state.error || null });
+        }, 0);
+        await SyncedObjectManager.forceSyncTask(object, "push");
+        return object;
     }
 
     // Local Storage Interface:
@@ -170,11 +218,11 @@ export class SyncedObjectManager {
         let property, debounceTime;
         if (typeof arg1 === "string") {
             property = arg1;
-            debounceTime = arg2 || syncedObject.debounceTime;
+            debounceTime = (arg2 !== undefined) ? arg2 : syncedObject.debounceTime;
         }
         else {
             property = null;
-            debounceTime = arg1 || syncedObject.debounceTime;
+            debounceTime = (arg1 !== undefined) ? arg1 : syncedObject.debounceTime;
         }
         this.validateInput("modification", { syncedObject, property, debounceTime });
         // Modify changelogs if needed:
@@ -186,30 +234,15 @@ export class SyncedObjectManager {
             this.updateComponents(syncedObject, { requestType: "modify", success: null, error: syncedObject.state.error || null });
         }, 0);
         // Handle syncing:
-        if (debounceTime === 0) {
-            clearTimeout(this.pendingSyncTasks.get(syncedObject.key));
-            this.pendingSyncTasks.delete(syncedObject.key);
-            setTimeout(() => {
-                this.forceSyncTask(syncedObject, "push");
-            }, 0);
-        }
-        else {
-            this.queueSyncTask(syncedObject, debounceTime);
-        }
+        this.queueSyncTask(syncedObject, debounceTime);
     }
-    static async queueSyncTask(syncedObject, debounceTime) {
+    static async queueSyncTask(syncedObject, debounceTime, requestType = "push") {
         // Queue an object to be pushed, debouncing multiple requests.
-        if (this.pendingSyncTasks.has(syncedObject.key)) {
-            // Defer the pending sync:
-            clearTimeout(this.pendingSyncTasks.get(syncedObject.key));
+        clearTimeout(this.pendingSyncTasks.get(syncedObject.key));
+        const timeoutId = setTimeout(async () => {
+            await this.forceSyncTask(syncedObject, requestType);
             this.pendingSyncTasks.delete(syncedObject.key);
-        }
-        // Start a timeout to sync object:
-        const sync = () => {
-            this.pendingSyncTasks.delete(syncedObject.key);
-            this.forceSyncTask(syncedObject, "push");
-        }
-        const timeoutId = setTimeout(sync, debounceTime);
+        }, debounceTime);
         this.pendingSyncTasks.set(syncedObject.key, timeoutId);
     }
     static async forceSyncTask(syncedObject, requestType) {

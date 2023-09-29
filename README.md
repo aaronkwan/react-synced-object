@@ -18,6 +18,7 @@ A lightweight, efficient, and versatile package for seamless state synchronizati
 - `useSyncedObject`: A custom React hook to interact with a `SyncedObject` from any component.
 - `getSyncedObject`: A universal point of access for any `SyncedObject`.
 - `deleteSyncedObject`: Rarely needed but available for certain use cases.
+- `updateSyncedObject`: A synchronization-aware function for modifying a `SyncedObject`.
 - `findInLocalStorage`: Utility function to retrieve from local storage.
 - `removeInLocalStorage`: Utility function to delete from local storage.
 
@@ -31,8 +32,10 @@ npm install react-synced-object
 
 ## Create a Synced Object
 ```javascript
-import { initializeSyncedObject } from 'react-synced-object'
+import { initializeSyncedObject } from 'react-synced-object';
+
 const options = { defaultValue: { myProperty: "hello world" }, debounceTime: 5000 };
+
 const myObject = initializeSyncedObject("myObject", "local", options);
 // Create a synced object with key "myObject", type "local", and the specified options.
 ```
@@ -43,14 +46,17 @@ const myObject = initializeSyncedObject("myObject", "local", options);
 ### Access a Synced Object via getter:
 ```javascript
 import { getSyncedObject } from 'react-synced-object';
+
 const myObject = getSyncedObject("myObject");
 console.log(myObject?.data.myProperty); // "hello world"
 ```
 ### Access a Synced Object via hook:
 ```javascript
 import { useSyncedObject } from 'react-synced-object';
+
 function MyComponent() {
   const { syncedObject } = useSyncedObject("myObject");
+
   return (
     <div>{syncedObject && syncedObject.data.myProperty}</div>
   );
@@ -61,7 +67,9 @@ function MyComponent() {
 ### Modify a Synced Object via setter:
 ```javascript
 import { initializeSyncedObject } from 'react-synced-object';
+
 const myObject = initializeSyncedObject("myObject", "local", options);
+
 myObject.data = { myProperty: "hello world", myProperty2: "hello world again!" };
 myObject.modify(0);
 // Set data, then handle modifications to `myObject` with a sync debounce time of 0.
@@ -69,10 +77,13 @@ myObject.modify(0);
 ### Modify a Synced Object via hook:
 ```javascript
 import { useSyncedObject } from 'react-synced-object';
+
 function MyComponent() {
   const { syncedObject } = useSyncedObject("myObject");
+
   return (
-    <input onChange={(event) => {syncedObject.modify().myProperty = event.target.value}}></input>
+    <input onChange={(event) => {syncedObject.modify().myProperty = event.target.value}}>
+    </input>
   );
     // Set myProperty to the input's value, then handle modifications with myObject's     debounce time of 5000 ms.
 }
@@ -149,13 +160,9 @@ A `SyncedObject` has several runtime properties and methods which provide useful
 - In contrast, `useSyncedObject` establishes direct dependencies to specific `SyncedObject` properties using event listeners, resulting in highly accurate and performant component updates.
 ```javascript
   const options = {dependencies: ["modify"], properties: ["myProperty"]};
-  const { 
-  syncedObject, 
-  syncedData, 
-  syncedSuccess, 
-  syncedError, 
-  modify 
-  } = useSyncedObject("myObject", options);
+
+  const { syncedObject, syncedData, 
+  syncedSuccess, syncedError, modify } = useSyncedObject("myObject", options);
   // This component will rerender when property `myProperty` of "myObject" is modified.
 ```
 ### Options
@@ -225,6 +232,22 @@ deleteSyncedObject("myObject");
 ```
 - `deleteSyncedObject` deletes an initialized `SyncedObject` with the given key from the manager. It also updates dependent components and prevents further `modify` calls.
 - Be wary when deleting an `SyncedObject` initialized inside a component - it could be reinitialized.
+
+### updateSyncedObject(key, updater)
+```javascript
+const myObject = initializeSyncedObject("myObject", "custom", {
+  customSyncFunctions: { pull: fetchFromDatabase } });
+
+const myUpdatedObject = await updateSyncedObject("myObject", { 
+  prop1: "new value", prop2: "new value2" }); // Executes once `myObject` completes initial pull.
+
+console.log(myObject.data.prop1); // "new value"
+console.log(myObject.state.success); // true
+```
+- `updateSyncedObject` updates the data of an initialized `SyncedObject` with the given key, returning the newly modified object after attempted synchronization.
+- Used when the order of modification matters - `updateSyncedObject` waits until *after* existing sync requests finish, eliminating race conditions and ensuring access to the most recent data.
+- Provides the resulting state for use in error-sensitive standalone function calls.
+- `updater`: If an object, overwrites the specified properties of `SyncedObject.data` with the provided values. If a non-object, overwrites the `SyncedObject.data` field itself.
 
 # Outro
 - Feel free to comment or bug report [here](https://github.com/aaronkwan/react-synced-object/issues). 
