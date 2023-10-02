@@ -38,6 +38,7 @@ export class SyncedObjectManager {
             reloadBehavior: reloadBehavior,
             safeMode: safeMode,
             callerId: null,
+            resolvePromise: null,
             pull: customSyncFunctions?.pull,
             push: customSyncFunctions?.push,
             onSuccess: callbackFunctions?.onSuccess,
@@ -65,22 +66,28 @@ export class SyncedObjectManager {
     /**
      * Delete the {@link SyncedObject} with the provided key from the object manager, if it exists.
      * @param {string} key Requested object key.
+     * @returns {boolean} Whether deletion was successful.
      * @example
      * deleteSyncedObject("myObject"); // myObject.modify() will now throw an error.
      */
     static deleteSyncedObject(key) {
-        const object = SyncedObjectManager.syncedObjects.get(key);
-        if (object) {
-            SyncedObjectManager.syncedObjects.delete(key);
-            clearTimeout(SyncedObjectManager.pendingSyncTasks.get(key));
-            SyncedObjectManager.pendingSyncTasks.delete(key);
+        const object = SyncedObjectManager.getSyncedObject(key);
+        if (!object) {
+            return false;
+        }
+        if (object.safeMode) {
             object.modify = function () {
                 throw new SyncedObjectError(`Synced Object Modification: object with key '${key}' has been deleted.`, key, "deleteSyncedObject");
             }
-            setTimeout(() => {
-                SyncedObjectManager.updateComponents(object, { requestType: "delete", success: null, error: null });
-            }, 0);
         }
+        else {
+            object.modify = function () { return; }
+        }
+        setTimeout(() => {
+            SyncedObjectManager.updateComponents(object, { requestType: "delete", success: null, error: null });
+        }, 0);
+        SyncedObjectManager.syncedObjects.delete(key);
+        return true;
     }
     /**
      * Update the {@link SyncedObject} data with the provided key, attempt sync, then return.
@@ -102,15 +109,13 @@ export class SyncedObjectManager {
             throw new SyncedObjectError(`Synced Object Modification: object with key '${key}' does not exist.`, key, "updateSyncedObject");
         }
         // Wait for pending syncs:
+        if (object.resolvePromise) {
+            object.resolvePromise();
+        }
         if (SyncedObjectManager.pendingSyncTasks.has(key)) {
             await new Promise(resolve => {
-                const intervalId = setInterval(() => {
-                    if (!SyncedObjectManager.pendingSyncTasks.has(key)) {
-                        clearInterval(intervalId);
-                        resolve();
-                    }
-                }, 100);
-            });
+                object.resolvePromise = resolve;
+            });;
         }
         // Modify object:
         if (typeof updater === 'object') {
@@ -124,10 +129,7 @@ export class SyncedObjectManager {
             object.data = updater;
         }
         // Sync object:
-        setTimeout(() => {
-            SyncedObjectManager.updateComponents(object, { requestType: "modify", success: null, error: object.state.error || null });
-        }, 0);
-        await SyncedObjectManager.forceSyncTask(object, "push");
+        await SyncedObjectManager.handleModifications(object, 0);
         return object;
     }
 
@@ -188,7 +190,7 @@ export class SyncedObjectManager {
         if (affectedObjects !== "decouple" && affectedObjects !== "delete" && affectedObjects !== "ignore") {
             throw new SyncedObjectError(`Failed to remove from local storage: affectedObjects must be 'decouple', 'delete', 'ignore', found: '${affectedObjects}'.`, keyPattern, "removeFromLocalStorage");
         }
-        // Find keys:
+        // Delete keys:
         const matchingKeys = SyncedObjectManager.findInLocalStorage(keyPattern, "key");
         matchingKeys.map((key) => SyncedObjectManager.localStorage.removeItem(key));
         // Handle affected objects:
@@ -234,19 +236,38 @@ export class SyncedObjectManager {
             this.updateComponents(syncedObject, { requestType: "modify", success: null, error: syncedObject.state.error || null });
         }, 0);
         // Handle syncing:
-        this.queueSyncTask(syncedObject, debounceTime);
+        await this.queueSyncTask(syncedObject, debounceTime);
     }
     static async queueSyncTask(syncedObject, debounceTime, requestType = "push") {
         // Queue an object to be pushed, debouncing multiple requests.
+        if (syncedObject.type === "temp") {
+            this.attemptSync(syncedObject, requestType);
+            return;
+        }
         clearTimeout(this.pendingSyncTasks.get(syncedObject.key));
-        const timeoutId = setTimeout(async () => {
-            await this.forceSyncTask(syncedObject, requestType);
+        if (debounceTime === 0) {
+            this.pendingSyncTasks.set(syncedObject.key, -1);
+            await this.attemptSync(syncedObject, requestType);
             this.pendingSyncTasks.delete(syncedObject.key);
+            if (syncedObject.resolvePromise) {
+                syncedObject.resolvePromise();
+                syncedObject.resolvePromise = null;
+            }
+            return;
+        }
+        const timeoutId = setTimeout(async () => {
+            await this.attemptSync(syncedObject, requestType);
+            this.pendingSyncTasks.delete(syncedObject.key);
+            if (syncedObject.resolvePromise) {
+                syncedObject.resolvePromise();
+                syncedObject.resolvePromise = null;
+            }
         }, debounceTime);
         this.pendingSyncTasks.set(syncedObject.key, timeoutId);
     }
-    static async forceSyncTask(syncedObject, requestType) {
+    static async attemptSync(syncedObject, requestType) {
         // Sync an object immediately.
+        let success = true, error = null;
         try {
             if (syncedObject.type === "local") {
                 if (requestType === "push") {
@@ -265,13 +286,13 @@ export class SyncedObjectManager {
                 }
             }
         }
-        catch (error) {
-            // Handle callbacks with error:
-            this.handleCallBacks(syncedObject, { requestType: requestType, success: false, error: error });
-            return;
+        catch (err) {
+            success = false;
+            error = err;
         }
-        // Handle callbacks with success:
-        this.handleCallBacks(syncedObject, { requestType: requestType, success: true, error: null });
+        if (requestType === "delete") { success = false; }
+
+        this.handleCallBacks(syncedObject, { requestType, success, error });
     }
     static async pullFromLocal(syncedObject) {
         // Pull data from local storage.
@@ -309,22 +330,19 @@ export class SyncedObjectManager {
     }
     static async handleCallBacks(syncedObject, status) {
         // Handle callbacks, emit events, and reset changelogs.
+        const { success, error } = status;
+        this.updateComponents(syncedObject, status);
+        if (success) syncedObject.changelog = [];
+        syncedObject.callerId = null;
         if (syncedObject.type === "temp") {
-            syncedObject.changelog = [];
-            syncedObject.callerId = null;
-            syncedObject.state.success = true;
             return;
         }
-        const { requestType, success, error } = status;
         if (success && syncedObject.onSuccess) {
             syncedObject.onSuccess(syncedObject, status);
         }
         if (error && syncedObject.onError) {
             syncedObject.onError(syncedObject, status);
         }
-        this.updateComponents(syncedObject, status);
-        if (success) syncedObject.changelog = [];
-        syncedObject.callerId = null;
     }
     
     // Backend Sub-Utils and Setup:
@@ -439,7 +457,7 @@ export class SyncedObjectManager {
                 }
                 if (reloadBehavior === "finish") {
                     SyncedObjectManager.pendingSyncTasks.delete(syncedObject.key);
-                    SyncedObjectManager.forceSyncTask(syncedObject, "push");
+                    SyncedObjectManager.attemptSync(syncedObject, "push");
                     continue;
                 }
                 if (reloadBehavior === "prevent") {
@@ -463,11 +481,6 @@ export class SyncedObjectError extends Error {
     }
 }
 
-
-/**
- *  * @typedef {Object} User
- * @property {string} key The key associated with the synced object.
- */
 /**
  * Represents a Synced Object.
  * @classdesc A Synced Object is used to manage synchronized state and behavior.
@@ -475,8 +488,8 @@ export class SyncedObjectError extends Error {
  */
 export class SyncedObject {
     constructor(initObject) {
-        const { key, type, data, changelog, debounceTime, reloadBehavior, safeMode, callerId, pull, push, onSuccess, onError } = initObject;
-        if (Object.keys(initObject).length < 12) {
+        const { key, type, data, changelog, debounceTime, reloadBehavior, safeMode, callerId, resolvePromise, pull, push, onSuccess, onError } = initObject;
+        if (Object.keys(initObject).length < 13) {
             throw new SyncedObjectError(`Missing parameters in SyncedObject constructor. Use factory function initializedSyncedObject() instead.`, key, "initializeSyncedObject");
         }
         this.key = key;
@@ -487,6 +500,7 @@ export class SyncedObject {
         this.reloadBehavior = reloadBehavior;
         this.safeMode = safeMode;
         this.callerId = callerId;
+        this.resolvePromise = resolvePromise;
         if (pull) this.pull = pull;
         if (push) this.push = push;
         if (onSuccess) this.onSuccess = onSuccess;

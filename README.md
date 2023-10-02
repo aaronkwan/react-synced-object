@@ -17,7 +17,7 @@ A lightweight, efficient, and versatile package for seamless state synchronizati
 - `initializeSyncedObject`: The factory function for a `SyncedObject`. 
 - `useSyncedObject`: A custom React hook to interact with a `SyncedObject` from any component.
 - `getSyncedObject`: A universal point of access for any `SyncedObject`.
-- `deleteSyncedObject`: Rarely needed but available for certain use cases.
+- `deleteSyncedObject`: Safe-deletion of a `SyncedObject`.
 - `updateSyncedObject`: A synchronization-aware function for modifying a `SyncedObject`.
 - `findInLocalStorage`: Utility function to retrieve from local storage.
 - `removeInLocalStorage`: Utility function to delete from local storage.
