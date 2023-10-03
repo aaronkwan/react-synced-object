@@ -201,10 +201,10 @@ A `SyncedObject` has several runtime properties and methods which provide useful
 
 | Return Value   | Description                                     |
 |--------|-------------------------------------------------|
-| syncedObject | Equivalent to `getSyncedObject`. Either `SyncedObject` or null.
-| syncedData | Equivalent to `SyncedObject.data`, or null.
-| syncedSuccess | Equivalent to [`SyncedObject.state.success`](#syncedobjectstate-property), or null.
-| syncedError | Equivalent to [`SyncedObject.state.error`](#syncedobjectstate-property), or null.
+| syncedObject | Equivalent to `getSyncedObject`. Either `SyncedObject` or undefined.
+| syncedData | Equivalent to `SyncedObject?.data`.
+| syncedSuccess | Equivalent to [`SyncedObject?.state.success`](#syncedobjectstate-property).
+| syncedError | Equivalent to [`SyncedObject?.state.error`](#syncedobjectstate-property).
 | modify | Similar to `SyncedObject.modify`, if `SyncedObject` exists. <ul><li>This version of `modify` records the component that triggered the modification.</li><li>This is intended to be used in tandem with the "modify_external" [dependency](#optionsdependencies).</li></ul>
 
 ## Other Utility Functions

@@ -113,18 +113,10 @@ const useSyncedObject = (key, options) => {
     useEffect(() => {
         // Initialize synced object:
         const syncedObject = SyncedObjectManager.getSyncedObject(key);
-        if (!syncedObject) {
-            setSyncedObject(null);
-            setSyncedData(null);
-            setSyncedSuccess(null);
-            setSyncedError(null);
-        }
-        else {
-            setSyncedObject(syncedObject);
-            setSyncedData(syncedObject.data);
-            setSyncedSuccess(syncedObject.state.success);
-            setSyncedError(syncedObject.state.error);
-        }
+        setSyncedObject(syncedObject);
+        setSyncedData(syncedObject?.data);
+        setSyncedSuccess(syncedObject?.state.success);
+        setSyncedError(syncedObject?.state.error);
     }, [rerender]);
     useEffect(() => {
         // Checks:
@@ -186,10 +178,11 @@ const useSyncedObject = (key, options) => {
     }, [key]);
 
     // Interface:
-    const [syncedObject, setSyncedObject] = useState(null);
-    const [syncedData, setSyncedData] = useState(null);
-    const [syncedSuccess, setSyncedSuccess] = useState(null);
-    const [syncedError, setSyncedError] = useState(null);
+    const object = SyncedObjectManager.getSyncedObject(key);
+    const [syncedObject, setSyncedObject] = useState(object);
+    const [syncedData, setSyncedData] = useState(object?.data);
+    const [syncedSuccess, setSyncedSuccess] = useState(object?.state.success);
+    const [syncedError, setSyncedError] = useState(object?.state.error);
     const modify = (arg1, arg2) => {
         if (!syncedObject) return;
         syncedObject.callerId = componentId;
